@@ -25,3 +25,6 @@ dist-ssr
 
 backend/jorvan testing ground/data
 backend/jorvan testing ground/__pycache__
+backend/jorvan testing ground/preprocessed
+
+.env

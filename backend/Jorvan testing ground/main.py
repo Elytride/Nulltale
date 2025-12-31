@@ -1,6 +1,11 @@
 import os
 import sys
-from processor import classify_file, extract_participants
+import io
+
+# Fix Windows console encoding for Unicode characters
+sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
+
+from processor import classify_file, extract_participants, generate_style_file, generate_context_file
 
 def main():
     data_folder = os.path.join(os.getcwd(), 'data')
@@ -62,12 +67,26 @@ def main():
                     print("Invalid input. Please enter a number.")
         
         if subject != "None of them":
-            final_results.append((file_name, subject))
+            final_results.append((file_name, file_path, file_type, subject))
             
     print("\n--- Final Report ---")
     print("Files with identified subjects:")
-    for fname, subj in final_results:
+    for fname, fpath, ftype, subj in final_results:
         print(f"File: {fname} | Subject: {subj}")
+    
+    # --- Stage 2: Generate preprocessed files ---
+    if final_results:
+        # Get the subject name (assuming single subject for now)
+        subject_name = final_results[0][3]  # Use first file's subject
+        
+        preprocessed_folder = os.path.join(os.getcwd(), 'preprocessed')
+        style_path = os.path.join(preprocessed_folder, 'style', f'{subject_name}_style.txt')
+        context_path = os.path.join(preprocessed_folder, 'context', f'{subject_name}_context.txt')
+        
+        print("\n--- Generating Preprocessed Files ---")
+        generate_style_file(final_results, style_path)
+        generate_context_file(final_results, context_path)
+        print("\nPreprocessing complete!")
 
 if __name__ == "__main__":
     main()

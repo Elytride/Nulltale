@@ -1,3 +1,6 @@
+Task : 
+- Create a chatbot that can replicate a person's talking style, while having their knowledge based on chat data given
+
 1. File sorting
 - create whatsapp detector
 - create instagram detector
@@ -5,15 +8,23 @@
 - name exclusion
 DONE /
 
-2. Data sorting
-- data compilation for "style" (newest 3 months of convo, include other participants texts)
-- data compilation for "context" (sort by name)
-- handle extreme data (copy pasted long texts/links)
+2. Data sorting 1
+- data compilation for "style" (5k lines max per file, most recent messages)
+  - replace links with *link*
+  - replace texts >700 chars with *long text*
+- data compilation for "context" (all-time subject messages)
+  - remove links, emoji-only, filler words (ok, lol, idk, etc.)
+DONE /
+
+3. Data sorting 2
 - create RAG system for "context"
 - create data summary system for "style" via gemini
 
-3. Chatbot system
+4. Chatbot system
 - chatbot with "context" only (RAG system implementation)
 - chatbot with "style only" (data summary system implementation)
 - chatbot with "style" and "context"
+
+5. enhancement
 - token use optimisation
+- instead of having the user input the name, use ai to find the name for each file based on what the user said as context
