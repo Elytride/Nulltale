@@ -11,6 +11,7 @@ node_modules
 dist
 dist-ssr
 *.local
+.env
 
 # Editor directories and files
 .vscode/*
@@ -28,3 +29,6 @@ backend/jorvan testing ground/__pycache__
 backend/jorvan testing ground/preprocessed
 
 .env
+backend/credentials/*
+backend/Voice Testing/ffmpeg.exe
+backend/Voice Testing/ffprobe.exe

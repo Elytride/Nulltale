@@ -5,7 +5,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Send, Paperclip, Mic, User, Phone, PhoneOff, Volume2, Eye } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { motion, AnimatePresence } from "framer-motion";
-import { sendMessage, getMessages } from "@/lib/api";
+import { sendMessage, getMessages, streamVoiceCall, warmupModels } from "@/lib/api";
 
 export function ChatInterface({ sessionId = "1", sessionName = "Alan Turing" }) {
     const [messages, setMessages] = useState([]);
@@ -17,6 +17,9 @@ export function ChatInterface({ sessionId = "1", sessionName = "Alan Turing" }) 
     const [isListening, setIsListening] = useState(false);
     const scrollRef = useRef(null);
     const fileInputRef = useRef(null);
+    const audioContextRef = useRef(null);
+    const audioQueueRef = useRef([]);
+    const isPlayingRef = useRef(false);
 
     // Fetch messages on mount or session change
     useEffect(() => {
@@ -144,6 +147,199 @@ export function ChatInterface({ sessionId = "1", sessionName = "Alan Turing" }) 
         const secs = seconds % 60;
         return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
     };
+
+    // Voice Call State
+    const [callStatus, setCallStatus] = useState("idle"); // idle, listening, processing, speaking
+    const [aiResponse, setAiResponse] = useState("");
+    const recognitionRef = useRef(null);
+    const isCallActiveRef = useRef(false); // Ref to avoid stale closure
+    const callStatusRef = useRef("idle"); // Ref to avoid stale closure for callStatus
+    const onAudioFinishedRef = useRef(null); // Callback when all audio done
+
+    // Helper to update callStatus (both state and ref)
+    const updateCallStatus = (status) => {
+        setCallStatus(status);
+        callStatusRef.current = status;
+    };
+
+    // Initialize Web Audio for playback
+    const initAudioContext = () => {
+        if (!audioContextRef.current) {
+            audioContextRef.current = new (window.AudioContext || window.webkitAudioContext)();
+        }
+        return audioContextRef.current;
+    };
+
+    // Play audio from base64 WAV data
+    const playAudioChunk = async (base64Audio) => {
+        try {
+            const audioContext = initAudioContext();
+            const binaryString = atob(base64Audio);
+            const bytes = new Uint8Array(binaryString.length);
+            for (let i = 0; i < binaryString.length; i++) {
+                bytes[i] = binaryString.charCodeAt(i);
+            }
+
+            // Decode audio data
+            const audioBuffer = await audioContext.decodeAudioData(bytes.buffer);
+
+            // Queue for sequential playback
+            audioQueueRef.current.push(audioBuffer);
+            playNextInQueue();
+        } catch (e) {
+            console.error("Audio decode error:", e);
+        }
+    };
+
+    // Play audio chunks sequentially
+    const playNextInQueue = () => {
+        if (isPlayingRef.current || audioQueueRef.current.length === 0) {
+            // If queue is empty and not playing, call the onAudioFinished callback
+            if (!isPlayingRef.current && audioQueueRef.current.length === 0 && onAudioFinishedRef.current) {
+                const callback = onAudioFinishedRef.current;
+                onAudioFinishedRef.current = null;
+                callback();
+            }
+            return;
+        }
+
+        isPlayingRef.current = true;
+        const audioBuffer = audioQueueRef.current.shift();
+        const audioContext = audioContextRef.current;
+
+        const source = audioContext.createBufferSource();
+        source.buffer = audioBuffer;
+        source.connect(audioContext.destination);
+        source.onended = () => {
+            isPlayingRef.current = false;
+            playNextInQueue();
+        };
+        source.start(0);
+    };
+
+    // Handle voice call start/stop
+    const handleCallToggle = async () => {
+        if (isCallActive) {
+            // End call
+            setIsCallActive(false);
+            isCallActiveRef.current = false;
+            setCallDuration(0);
+            updateCallStatus("idle");
+            setAiResponse("");
+            if (recognitionRef.current) {
+                recognitionRef.current.stop();
+            }
+            audioQueueRef.current = [];
+            onAudioFinishedRef.current = null;
+        } else {
+            // Start call - warmup models in background
+            warmupModels(); // Fire and forget - preload Gemini + XTTS
+            setIsCallActive(true);
+            isCallActiveRef.current = true;
+            updateCallStatus("listening");
+            setAiResponse("");
+            startListening();
+        }
+    };
+
+    // Start speech recognition
+    const startListening = () => {
+        if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
+            alert("Speech recognition is not supported in this browser.");
+            setCallStatus("idle");
+            return;
+        }
+
+        const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+        const recognition = new SpeechRecognition();
+        recognitionRef.current = recognition;
+
+        recognition.continuous = false;
+        recognition.interimResults = false;
+        recognition.lang = 'en-US';
+
+        recognition.onstart = () => {
+            updateCallStatus("listening");
+        };
+
+        recognition.onresult = async (event) => {
+            const transcript = event.results[0][0].transcript;
+            console.log("User said:", transcript);
+            updateCallStatus("processing");
+
+            // Stream voice response
+            await handleVoiceResponse(transcript);
+        };
+
+        recognition.onerror = (event) => {
+            console.error("Speech recognition error:", event.error);
+            if (isCallActiveRef.current && event.error !== 'aborted') {
+                // Restart listening on error
+                setTimeout(() => startListening(), 500);
+            }
+        };
+
+        recognition.onend = () => {
+            // Restart if call is still active and we're not processing
+            console.log("Recognition ended, callStatus:", callStatusRef.current);
+            if (isCallActiveRef.current && callStatusRef.current === "listening") {
+                setTimeout(() => startListening(), 100);
+            }
+        };
+
+        recognition.start();
+    };
+
+    // Handle streaming voice response
+    const handleVoiceResponse = async (userMessage) => {
+        setAiResponse("");
+        audioQueueRef.current = [];
+
+        await streamVoiceCall(userMessage, sessionId, {
+            onText: (text) => {
+                setAiResponse(prev => prev + text);
+            },
+            onAudio: (base64Audio, index) => {
+                updateCallStatus("speaking");
+                playAudioChunk(base64Audio);
+            },
+            onStatus: (status) => {
+                console.log("Call status:", status);
+            },
+            onDone: (fullText) => {
+                console.log("Response complete:", fullText);
+                // Set callback to resume listening after all audio finishes
+                onAudioFinishedRef.current = () => {
+                    if (isCallActiveRef.current) {
+                        console.log("Audio finished, resuming listening...");
+                        updateCallStatus("listening");
+                        startListening();
+                    }
+                };
+                // Trigger check in case audio queue is already empty
+                setTimeout(() => playNextInQueue(), 100);
+            },
+            onError: (error) => {
+                console.error("Voice call error:", error);
+                updateCallStatus("listening");
+                if (isCallActiveRef.current) {
+                    startListening();
+                }
+            }
+        });
+    };
+
+    // Cleanup on unmount
+    useEffect(() => {
+        return () => {
+            if (recognitionRef.current) {
+                recognitionRef.current.stop();
+            }
+            if (audioContextRef.current) {
+                audioContextRef.current.close();
+            }
+        };
+    }, []);
 
     return (
         <div className="flex-1 flex flex-col h-full bg-background relative overflow-hidden">
@@ -358,11 +554,21 @@ export function ChatInterface({ sessionId = "1", sessionName = "Alan Turing" }) 
                                 <h2 className="text-2xl sm:text-3xl font-display font-bold text-white mb-1 sm:mb-2">{sessionName}</h2>
                                 <p className="text-xs sm:text-base text-muted-foreground">
                                     {isCallActive ? (
-                                        <span className="text-primary font-mono font-medium">{formatDuration(callDuration)}</span>
+                                        <span className="text-primary font-mono font-medium">
+                                            {callStatus === "listening" && "Listening..."}
+                                            {callStatus === "processing" && "Processing..."}
+                                            {callStatus === "speaking" && "Speaking..."}
+                                            {callStatus === "idle" && formatDuration(callDuration)}
+                                        </span>
                                     ) : (
                                         "Ready for call"
                                     )}
                                 </p>
+                                {aiResponse && isCallActive && (
+                                    <p className="text-xs text-muted-foreground mt-2 max-w-xs mx-auto truncate">
+                                        "{aiResponse.slice(0, 50)}..."
+                                    </p>
+                                )}
                             </motion.div>
 
                             {/* Call Controls */}
@@ -389,7 +595,7 @@ export function ChatInterface({ sessionId = "1", sessionName = "Alan Turing" }) 
                                 </Button>
 
                                 <Button
-                                    onClick={() => setIsCallActive(!isCallActive)}
+                                    onClick={handleCallToggle}
                                     size="lg"
                                     className={cn(
                                         "h-12 w-12 sm:h-16 sm:w-16 rounded-full font-medium transition-all duration-300 p-0",

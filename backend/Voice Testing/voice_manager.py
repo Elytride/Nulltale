@@ -14,7 +14,7 @@ import shutil
 import logging
 import torchaudio
 from pathlib import Path
-from typing import List, Union, Optional
+from typing import List, Union, Optional, Generator
 import numpy as np
 from TTS.api import TTS
 from TTS.tts.configs.xtts_config import XttsConfig
@@ -174,3 +174,49 @@ class VoiceManager:
         buffer.seek(0)
         
         return buffer
+
+    def speak_stream(self, text: str, voice_name: str, language: str = "en") -> Generator[io.BytesIO, None, None]:
+        """
+        Generates speech using a saved voice profile with streaming.
+        Yields: BytesIO objects containing WAV audio chunks for low-latency playback.
+        """
+        voice_path = self.storage_dir / f"{voice_name}.pth"
+        if not voice_path.exists():
+            raise ValueError(f"Voice '{voice_name}' not found. Call add_voice() first.")
+
+        # Load latents
+        latents = torch.load(voice_path, weights_only=True)
+        gpt_cond_latent = latents["gpt_cond_latent"]
+        speaker_embedding = latents["speaker_embedding"]
+        
+        logger.info(f"Streaming synthesis for '{voice_name}'...")
+        
+        # Run streaming inference
+        chunks = self.model.synthesizer.tts_model.inference_stream(
+            text=text,
+            language=language,
+            gpt_cond_latent=gpt_cond_latent,
+            speaker_embedding=speaker_embedding,
+            enable_text_splitting=True
+        )
+        
+        for chunk in chunks:
+            # Convert to tensor if it's a numpy array
+            if isinstance(chunk, np.ndarray):
+                wav_tensor = torch.from_numpy(chunk)
+            else:
+                wav_tensor = chunk
+            
+            # Tensor should be [Channels, N] for torchaudio. XTTS outputs [N]
+            if wav_tensor.dim() == 1:
+                wav_tensor = wav_tensor.unsqueeze(0)
+                
+            # Move to CPU for saving
+            wav_tensor = wav_tensor.cpu().float()
+            
+            # Save chunk to buffer
+            buffer = io.BytesIO()
+            torchaudio.save(buffer, wav_tensor, 24000, format="wav")
+            buffer.seek(0)
+            
+            yield buffer

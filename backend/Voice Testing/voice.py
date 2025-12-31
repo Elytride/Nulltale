@@ -28,6 +28,12 @@ def main():
     speak_parser.add_argument("text", help="Text to speak")
     speak_parser.add_argument("--out", default="output/output.wav", help="Output filename (relative to Voice Testing)")
 
+    # Speak Stream Command
+    stream_parser = subparsers.add_parser("speak-stream", help="Generate speech using streaming (lower latency)")
+    stream_parser.add_argument("name", help="Name of the voice to use")
+    stream_parser.add_argument("text", help="Text to speak")
+    stream_parser.add_argument("--out", default="output/output_stream.wav", help="Output filename (relative to Voice Testing)")
+
     # Transcribe Command (STT)
     transcribe_parser = subparsers.add_parser("transcribe", help="Transcribe audio to text")
     transcribe_parser.add_argument("file", help="Path to audio file to transcribe")
@@ -40,7 +46,7 @@ def main():
         return
 
     # Handle TTS commands
-    if args.command in ["add", "speak"]:
+    if args.command in ["add", "speak", "speak-stream"]:
         manager = VoiceManager()
 
         if args.command == "add":
@@ -68,6 +74,31 @@ def main():
                 print(f"Success! Audio saved to: {out_path}")
             except Exception as e:
                 print(f"Error generating speech: {e}")
+
+        elif args.command == "speak-stream":
+            try:
+                print(f"Generating speech (streaming) for '{args.name}'...")
+                
+                # Resolve output path relative to script directory
+                script_dir = Path(__file__).parent
+                out_path = script_dir / args.out
+                out_path.parent.mkdir(parents=True, exist_ok=True)
+                
+                # Collect all chunks and write to file
+                all_audio = b""
+                chunk_count = 0
+                for chunk_buffer in manager.speak_stream(args.text, args.name):
+                    chunk_count += 1
+                    print(f"  Received chunk {chunk_count}...")
+                    all_audio += chunk_buffer.read()
+                
+                # Write combined audio to file
+                with open(out_path, "wb") as f:
+                    f.write(all_audio)
+                
+                print(f"Success! Streamed {chunk_count} chunks. Audio saved to: {out_path}")
+            except Exception as e:
+                print(f"Error generating speech (stream): {e}")
 
     # Handle STT commands
     elif args.command == "transcribe":
