@@ -24,11 +24,10 @@ dist-ssr
 *.sln
 *.sw?
 
-backend/jorvan testing ground/data
-backend/jorvan testing ground/__pycache__
-backend/jorvan testing ground/preprocessed
-backend/jorvan testing ground/.env
 backend/uploads/
+backend/preprocessed/
+backend/chats/
+backend/__pycache__
 
 .env
 backend/credentials/*

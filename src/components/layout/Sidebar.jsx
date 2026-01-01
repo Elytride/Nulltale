@@ -27,8 +27,8 @@ import { getSessions, createSession, deleteSession } from "@/lib/api";
 
 const FAQ_ITEMS = [
     {
-        question: "How do I create a new Null?",
-        answer: "Click the 'New Null' button at the top. Upload training data (text, video, or voice) to build the personality model."
+        question: "How do I create a new Chat?",
+        answer: "Click the 'New Chat' button at the top. Make sure you've uploaded training data and refreshed AI Memory first."
     },
     {
         question: "What data can I upload?",
@@ -66,15 +66,8 @@ export function Sidebar({ onOpenFiles, onOpenSettings, onSessionChange }) {
                 }
             } catch (error) {
                 console.error("Failed to fetch sessions:", error);
-                // Fallback to mock data
-                const fallback = [
-                    { id: "1", name: "Alan Turing", preview: "The imitation game is..." },
-                    { id: "2", name: "Ada Lovelace", preview: "Calculating the numbers..." },
-                    { id: "3", name: "Marcus Aurelius", preview: "The obstacle is the way." },
-                ];
-                setSessions(fallback);
-                setActiveSession("1");
-                onSessionChange?.(fallback[0]);
+                // No fallback - start with empty
+                setSessions([]);
             } finally {
                 setIsLoading(false);
             }
@@ -83,7 +76,7 @@ export function Sidebar({ onOpenFiles, onOpenSettings, onSessionChange }) {
     }, []);
 
     const handleNewNull = async () => {
-        const name = prompt("Enter a name for the new Null personality:");
+        const name = prompt("Enter a name for the new chat:");
         if (!name) return;
 
         try {
@@ -93,7 +86,7 @@ export function Sidebar({ onOpenFiles, onOpenSettings, onSessionChange }) {
             onSessionChange?.(newSession);
         } catch (error) {
             console.error("Failed to create session:", error);
-            alert("Failed to create new session. Please try again.");
+            alert("Failed to create new chat. Please try again.");
         }
     };
 
@@ -141,7 +134,7 @@ export function Sidebar({ onOpenFiles, onOpenSettings, onSessionChange }) {
                     onClick={handleNewNull}
                 >
                     <Plus size={16} />
-                    New Null
+                    New Chat
                 </Button>
 
                 <div className="text-xs font-medium text-muted-foreground mb-4 uppercase tracking-wider">

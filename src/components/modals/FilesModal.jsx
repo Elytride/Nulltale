@@ -5,10 +5,10 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { FileText, Mic, Upload, RefreshCw, Check, X, MessageSquare, Instagram, HelpCircle, User, Trash2, AlertCircle } from "lucide-react";
+import { FileText, Mic, Upload, RefreshCw, Check, X, MessageSquare, Instagram, HelpCircle, User, Trash2, AlertCircle, CheckCircle2 } from "lucide-react";
 import { Progress } from "@/components/ui/progress";
 import { motion, AnimatePresence } from "framer-motion";
-import { uploadFile, refreshAIMemory, setSubject, deleteUploadedFile, listFiles } from "@/lib/api";
+import { uploadFile, refreshAIMemory, checkRefreshReady, setSubject, deleteUploadedFile, listFiles } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
 // File type badge component
@@ -42,10 +42,14 @@ function formatFileSize(bytes) {
 export function FilesModal({ open, onOpenChange }) {
     const [isRefreshing, setIsRefreshing] = useState(false);
     const [progress, setProgress] = useState(0);
+    const [progressMessage, setProgressMessage] = useState('');
     const [uploadedFiles, setUploadedFiles] = useState({ text: [], voice: [] });
     const [uploading, setUploading] = useState(false);
     const [uploadError, setUploadError] = useState(null);
     const [rejectedFiles, setRejectedFiles] = useState([]);
+    const [refreshReady, setRefreshReady] = useState({ ready: false, reason: '' });
+    const [refreshError, setRefreshError] = useState(null);
+    const [successMessage, setSuccessMessage] = useState(null);
 
     const textInputRef = useRef(null);
     const voiceInputRef = useRef(null);
@@ -59,14 +63,16 @@ export function FilesModal({ open, onOpenChange }) {
 
     const refreshFileList = async () => {
         try {
-            const [textResult, voiceResult] = await Promise.all([
+            const [textResult, voiceResult, readyResult] = await Promise.all([
                 listFiles("text"),
-                listFiles("voice")
+                listFiles("voice"),
+                checkRefreshReady()
             ]);
             setUploadedFiles({
                 text: textResult.files || [],
                 voice: voiceResult.files || []
             });
+            setRefreshReady(readyResult);
         } catch (error) {
             console.error("Failed to load files:", error);
         }
@@ -75,24 +81,31 @@ export function FilesModal({ open, onOpenChange }) {
     const handleRefresh = async () => {
         setIsRefreshing(true);
         setProgress(0);
+        setProgressMessage('Starting...');
+        setRefreshError(null);
 
-        const interval = setInterval(() => {
-            setProgress(prev => {
-                if (prev >= 90) return prev;
-                return prev + 10;
-            });
-        }, 200);
-
-        try {
-            await refreshAIMemory();
-            setProgress(100);
-            setTimeout(() => setIsRefreshing(false), 1000);
-        } catch (error) {
-            console.error("Failed to refresh AI memory:", error);
-            setIsRefreshing(false);
-        } finally {
-            clearInterval(interval);
-        }
+        await refreshAIMemory({
+            onProgress: (data) => {
+                setProgress(Math.round(data.progress));
+                setProgressMessage(data.message);
+            },
+            onComplete: (data) => {
+                setProgress(100);
+                setProgressMessage(data.message);
+                setTimeout(() => {
+                    setIsRefreshing(false);
+                    setProgressMessage('');
+                    setSuccessMessage('AI Memory refreshed successfully!');
+                    // Auto-dismiss after 5 seconds
+                    setTimeout(() => setSuccessMessage(null), 5000);
+                }, 1000);
+            },
+            onError: (message) => {
+                setRefreshError(message);
+                setIsRefreshing(false);
+                setProgressMessage('');
+            }
+        });
     };
 
     const handleFileUpload = async (files, fileType) => {
@@ -311,6 +324,29 @@ export function FilesModal({ open, onOpenChange }) {
                     </div>
                 )}
 
+                {successMessage && (
+                    <motion.div
+                        initial={{ opacity: 0, scale: 0.95 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        exit={{ opacity: 0, scale: 0.95 }}
+                        className="flex items-center gap-3 p-4 bg-green-500/10 border border-green-500/20 rounded-lg text-green-400"
+                    >
+                        <CheckCircle2 size={24} className="flex-shrink-0" />
+                        <div className="flex-1">
+                            <p className="font-medium">Success!</p>
+                            <p className="text-sm text-green-300">{successMessage}</p>
+                        </div>
+                        <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-6 w-6 text-green-400 hover:text-green-300 hover:bg-green-500/20"
+                            onClick={() => setSuccessMessage(null)}
+                        >
+                            <X size={14} />
+                        </Button>
+                    </motion.div>
+                )}
+
                 <div className="mt-6">
                     <Tabs defaultValue="text" className="w-full">
                         <TabsList className="grid w-full grid-cols-2 bg-white/5 border border-white/5">
@@ -359,6 +395,21 @@ export function FilesModal({ open, onOpenChange }) {
                 </div>
 
                 <div className="mt-6">
+                    {refreshError && (
+                        <div className="flex items-center gap-2 p-3 mb-4 bg-red-500/10 border border-red-500/20 rounded-lg text-red-400 text-sm">
+                            <AlertCircle size={16} />
+                            {refreshError}
+                            <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-6 w-6 ml-auto text-red-400 hover:text-red-300"
+                                onClick={() => setRefreshError(null)}
+                            >
+                                <X size={14} />
+                            </Button>
+                        </div>
+                    )}
+
                     <AnimatePresence mode="wait">
                         {isRefreshing ? (
                             <motion.div
@@ -368,7 +419,7 @@ export function FilesModal({ open, onOpenChange }) {
                                 className="space-y-2"
                             >
                                 <div className="flex justify-between text-xs font-medium text-primary">
-                                    <span>Reindexing Neural Patterns...</span>
+                                    <span className="truncate">{progressMessage || 'Processing...'}</span>
                                     <span>{progress}%</span>
                                 </div>
                                 <Progress value={progress} className="h-2 bg-white/10" />
@@ -377,10 +428,22 @@ export function FilesModal({ open, onOpenChange }) {
                             <motion.div
                                 initial={{ opacity: 0, y: 10 }}
                                 animate={{ opacity: 1, y: 0 }}
+                                className="space-y-2"
                             >
+                                {!refreshReady.ready && (
+                                    <p className="text-xs text-muted-foreground text-center mb-2">
+                                        {refreshReady.reason || 'Upload files and select subjects to enable processing'}
+                                    </p>
+                                )}
                                 <Button
                                     onClick={handleRefresh}
-                                    className="w-full bg-gradient-to-r from-primary to-blue-600 hover:from-primary/90 hover:to-blue-600/90 text-white shadow-lg shadow-primary/20 h-12 text-md font-medium"
+                                    disabled={!refreshReady.ready}
+                                    className={cn(
+                                        "w-full h-12 text-md font-medium transition-all",
+                                        refreshReady.ready
+                                            ? "bg-gradient-to-r from-primary to-blue-600 hover:from-primary/90 hover:to-blue-600/90 text-white shadow-lg shadow-primary/20"
+                                            : "bg-white/5 text-muted-foreground cursor-not-allowed"
+                                    )}
                                 >
                                     <RefreshCw className="mr-2 w-5 h-5" />
                                     Refresh AI Memory

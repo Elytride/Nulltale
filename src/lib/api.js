@@ -99,12 +99,58 @@ export async function deleteUploadedFile(fileType, fileId) {
 }
 
 // --- AI Refresh ---
-export async function refreshAIMemory() {
-    const response = await fetch(`${API_BASE}/refresh`, {
-        method: 'POST',
-    });
-    if (!response.ok) throw new Error('Failed to refresh AI memory');
+export async function checkRefreshReady() {
+    const response = await fetch(`${API_BASE}/refresh/ready`);
+    if (!response.ok) throw new Error('Failed to check refresh status');
     return response.json();
+}
+
+export async function refreshAIMemory({ onProgress, onComplete, onError }) {
+    try {
+        const response = await fetch(`${API_BASE}/refresh`, {
+            method: 'POST',
+        });
+
+        if (!response.ok) {
+            throw new Error('Failed to start processing');
+        }
+
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+
+        while (true) {
+            const { value, done } = await reader.read();
+            if (done) break;
+
+            buffer += decoder.decode(value, { stream: true });
+
+            // Process complete SSE messages
+            const lines = buffer.split('\n');
+            buffer = lines.pop() || '';
+
+            for (const line of lines) {
+                if (line.startsWith('data: ')) {
+                    try {
+                        const data = JSON.parse(line.slice(6).trim());
+
+                        if (data.step === 'complete' && onComplete) {
+                            onComplete(data);
+                        } else if (data.step === 'error' && onError) {
+                            onError(data.message);
+                        } else if (onProgress) {
+                            onProgress(data);
+                        }
+                    } catch (e) {
+                        console.warn('Failed to parse SSE data:', line, e);
+                    }
+                }
+            }
+        }
+    } catch (error) {
+        console.error('Refresh AI memory error:', error);
+        if (onError) onError(error.message);
+    }
 }
 
 // --- Settings ---

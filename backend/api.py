@@ -345,7 +345,447 @@ def health_check():
     })
 
 
+# --- Processing Endpoints ---
+
+PREPROCESSED_DIR = Path(__file__).parent / "preprocessed"
+PREPROCESSED_DIR.mkdir(exist_ok=True)
+
+
+@app.route("/api/refresh/ready", methods=["GET"])
+def check_refresh_ready():
+    """Check if we're ready to process (all files have subjects selected)."""
+    files = scan_uploads_folder("text")
+    
+    if not files:
+        return jsonify({
+            "ready": False,
+            "reason": "No files uploaded",
+            "files_count": 0,
+            "files_with_subject": 0
+        })
+    
+    files_with_subject = [f for f in files if f.get("subject")]
+    
+    if len(files_with_subject) < len(files):
+        return jsonify({
+            "ready": False,
+            "reason": "Some files don't have a subject selected",
+            "files_count": len(files),
+            "files_with_subject": len(files_with_subject)
+        })
+    
+    return jsonify({
+        "ready": True,
+        "files_count": len(files),
+        "files_with_subject": len(files_with_subject)
+    })
+
+
+@app.route("/api/refresh", methods=["POST"])
+def process_files():
+    """
+    Process all uploaded files through the preprocessing pipeline.
+    Returns SSE stream with progress updates.
+    """
+    from flask import Response, stream_with_context
+    import json as json_module
+    import shutil
+    
+    # Import processing modules
+    from processor import generate_style_file, generate_context_chunks
+    from style_summarizer import generate_style_summary
+    from context_embedder import generate_embeddings
+    
+    def generate():
+        try:
+            # Step 1: Check files are ready
+            yield f"data: {json_module.dumps({'step': 'checking', 'progress': 0, 'message': 'Checking files...'})}\n\n"
+            
+            files = scan_uploads_folder("text")
+            if not files:
+                yield f"data: {json_module.dumps({'step': 'error', 'progress': 0, 'message': 'No files uploaded'})}\n\n"
+                return
+            
+            # Check all files have subjects
+            files_without_subject = [f for f in files if not f.get("subject")]
+            if files_without_subject:
+                yield f"data: {json_module.dumps({'step': 'error', 'progress': 0, 'message': 'Some files are missing subject selection'})}\n\n"
+                return
+            
+            # Group files by subject
+            subject_files = {}
+            for f in files:
+                subject = f["subject"]
+                if subject not in subject_files:
+                    subject_files[subject] = []
+                subject_files[subject].append(f)
+            
+            yield f"data: {json_module.dumps({'step': 'preparing', 'progress': 5, 'message': f'Found {len(files)} files for {len(subject_files)} subject(s)'})}\n\n"
+            
+            # Step 2: Clear preprocessed folder
+            yield f"data: {json_module.dumps({'step': 'cleaning', 'progress': 10, 'message': 'Cleaning preprocessed folder...'})}\n\n"
+            
+            for file_path in PREPROCESSED_DIR.iterdir():
+                if file_path.is_file():
+                    file_path.unlink()
+            
+            # Process each subject
+            total_subjects = len(subject_files)
+            for idx, (subject, subject_file_list) in enumerate(subject_files.items()):
+                base_progress = 15 + (idx * 80 // total_subjects)
+                step_size = 80 // total_subjects
+                
+                yield f"data: {json_module.dumps({'step': 'processing', 'progress': base_progress, 'message': f'Processing {subject}...'})}\n\n"
+                
+                # Prepare file results format: (filename, filepath, filetype, subject)
+                file_results = []
+                for f in subject_file_list:
+                    file_results.append((
+                        f["original_name"],
+                        f["path"],
+                        f["detected_type"],
+                        subject
+                    ))
+                
+                # Step 3: Generate style file (temporary)
+                yield f"data: {json_module.dumps({'step': 'style', 'progress': base_progress + step_size * 0.15, 'message': f'Generating style data for {subject}...'})}\n\n"
+                
+                temp_style_path = PREPROCESSED_DIR / f"{subject}_style_temp.txt"
+                generate_style_file(file_results, str(temp_style_path))
+                
+                # Step 4: Generate context chunks
+                yield f"data: {json_module.dumps({'step': 'chunks', 'progress': base_progress + step_size * 0.30, 'message': f'Generating context chunks for {subject}...'})}\n\n"
+                
+                chunks_path = PREPROCESSED_DIR / f"{subject}_context_chunks.json"
+                generate_context_chunks(file_results, str(chunks_path))
+                
+                # Step 5: Generate style summary via Gemini
+                yield f"data: {json_module.dumps({'step': 'summary', 'progress': base_progress + step_size * 0.50, 'message': f'Analyzing style with Gemini for {subject}...'})}\n\n"
+                
+                summary_path = PREPROCESSED_DIR / f"{subject}_style_summary.txt"
+                generate_style_summary(str(temp_style_path), str(summary_path), subject)
+                
+                # Step 6: Generate embeddings
+                yield f"data: {json_module.dumps({'step': 'embeddings', 'progress': base_progress + step_size * 0.75, 'message': f'Generating embeddings for {subject}...'})}\n\n"
+                
+                embeddings_path = PREPROCESSED_DIR / f"{subject}_embeddings.json"
+                generate_embeddings(str(chunks_path), str(embeddings_path))
+                
+                # Step 7: Cleanup temporary files
+                if temp_style_path.exists():
+                    temp_style_path.unlink()
+                
+                yield f"data: {json_module.dumps({'step': 'done_subject', 'progress': base_progress + step_size, 'message': f'Completed {subject}'})}\n\n"
+            
+            # Final cleanup - remove any remaining temp files
+            for file_path in PREPROCESSED_DIR.iterdir():
+                if '_temp' in file_path.name or '_style.txt' in file_path.name:
+                    file_path.unlink()
+            
+            yield f"data: {json_module.dumps({'step': 'complete', 'progress': 100, 'message': 'Processing complete!'})}\n\n"
+            
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            yield f"data: {json_module.dumps({'step': 'error', 'progress': 0, 'message': f'Error: {str(e)}'})}\n\n"
+    
+    return Response(
+        stream_with_context(generate()),
+        mimetype='text/event-stream',
+        headers={
+            'Cache-Control': 'no-cache',
+            'Connection': 'keep-alive',
+            'X-Accel-Buffering': 'no'
+        }
+    )
+
+
+# --- Chat / Sessions Endpoints ---
+
+# Chats directory for persistence
+CHATS_DIR = Path(__file__).parent / "chats"
+CHATS_DIR.mkdir(exist_ok=True)
+
+# In-memory storage for sessions and messages
+sessions = {}
+messages = {}
+chatbots = {}  # PersonaChatbot instances per session
+
+
+def save_session(session_id):
+    """Save a session to disk."""
+    if session_id not in sessions:
+        return
+    
+    session_file = CHATS_DIR / f"{session_id}.json"
+    import json
+    data = {
+        "session": sessions[session_id],
+        "messages": messages.get(session_id, [])
+    }
+    with open(session_file, 'w', encoding='utf-8') as f:
+        json.dump(data, f, indent=2)
+
+
+def load_sessions():
+    """Load all sessions from disk."""
+    import json
+    for file_path in CHATS_DIR.iterdir():
+        if file_path.suffix == '.json' and not file_path.name.startswith('.'):
+            try:
+                with open(file_path, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                session = data.get("session", {})
+                session_id = session.get("id")
+                if session_id:
+                    sessions[session_id] = session
+                    messages[session_id] = data.get("messages", [])
+                    
+                    # Initialize chatbot if subject available
+                    subject = session.get("subject")
+                    if subject:
+                        initialize_chatbot(session_id, subject)
+            except Exception as e:
+                print(f"Error loading session from {file_path}: {e}")
+
+
+def delete_session_file(session_id):
+    """Delete a session file from disk."""
+    session_file = CHATS_DIR / f"{session_id}.json"
+    if session_file.exists():
+        session_file.unlink()
+
+
+def get_available_subjects():
+    """Get list of available subjects from preprocessed folder."""
+    subjects = []
+    if PREPROCESSED_DIR.exists():
+        for file_path in PREPROCESSED_DIR.iterdir():
+            if file_path.name.endswith('_embeddings.json'):
+                subject = file_path.stem.replace('_embeddings', '')
+                subjects.append(subject)
+    return subjects
+
+
+def initialize_chatbot(session_id, subject):
+    """Initialize a PersonaChatbot for a session."""
+    from chatbot import PersonaChatbot
+    
+    summary_path = PREPROCESSED_DIR / f"{subject}_style_summary.txt"
+    embeddings_path = PREPROCESSED_DIR / f"{subject}_embeddings.json"
+    
+    if not summary_path.exists() or not embeddings_path.exists():
+        return None
+    
+    try:
+        chatbot = PersonaChatbot(str(summary_path), str(embeddings_path))
+        chatbots[session_id] = chatbot
+        return chatbot
+    except Exception as e:
+        print(f"Failed to initialize chatbot for {subject}: {e}")
+        return None
+
+
+# Load existing sessions on module load
+load_sessions()
+
+
+@app.route("/api/sessions", methods=["GET"])
+def get_sessions():
+    """Get all sessions."""
+    return jsonify({
+        "sessions": list(sessions.values())
+    })
+
+
+@app.route("/api/sessions", methods=["POST"])
+def create_session():
+    """Create a new chat session."""
+    import uuid as uuid_module
+    data = request.get_json() or {}
+    
+    # Get available subjects
+    available_subjects = get_available_subjects()
+    
+    session_id = uuid_module.uuid4().hex[:8]
+    name = data.get("name", "New Chat")
+    
+    # If a subject is available, use the first one
+    subject = available_subjects[0] if available_subjects else None
+    
+    session = {
+        "id": session_id,
+        "name": name,
+        "subject": subject,
+        "preview": "Start chatting...",
+        "created_at": datetime.now().isoformat()
+    }
+    
+    sessions[session_id] = session
+    messages[session_id] = []
+    
+    # Initialize chatbot if subject available
+    if subject:
+        initialize_chatbot(session_id, subject)
+    
+    # Save to disk
+    save_session(session_id)
+    
+    return jsonify(session)
+
+
+@app.route("/api/sessions/<session_id>", methods=["DELETE"])
+def delete_session(session_id):
+    """Delete a session."""
+    if session_id in sessions:
+        del sessions[session_id]
+    if session_id in messages:
+        del messages[session_id]
+    if session_id in chatbots:
+        del chatbots[session_id]
+    
+    # Delete from disk
+    delete_session_file(session_id)
+    
+    return jsonify({"success": True, "deleted_id": session_id})
+
+
+@app.route("/api/messages/<session_id>", methods=["GET"])
+def get_messages(session_id):
+    """Get messages for a session."""
+    return jsonify({
+        "messages": messages.get(session_id, [])
+    })
+
+
+@app.route("/api/chat", methods=["POST"])
+def chat():
+    """Send a message and get AI response."""
+    from datetime import datetime
+    import uuid as uuid_module
+    
+    data = request.get_json()
+    content = data.get("content", "").strip()
+    session_id = data.get("session_id", "default")
+    
+    if not content:
+        return jsonify({"error": "No message content"}), 400
+    
+    # Ensure session exists
+    if session_id not in sessions:
+        # Create default session
+        available_subjects = get_available_subjects()
+        subject = available_subjects[0] if available_subjects else None
+        
+        sessions[session_id] = {
+            "id": session_id,
+            "name": "Chat",
+            "subject": subject,
+            "preview": content[:50],
+            "created_at": datetime.now().isoformat()
+        }
+        messages[session_id] = []
+        
+        if subject:
+            initialize_chatbot(session_id, subject)
+    
+    # Create user message
+    timestamp = datetime.now().strftime("%I:%M %p")
+    user_msg = {
+        "id": uuid_module.uuid4().hex[:8],
+        "role": "user",
+        "content": content,
+        "timestamp": timestamp
+    }
+    
+    if session_id not in messages:
+        messages[session_id] = []
+    messages[session_id].append(user_msg)
+    
+    # Generate AI response
+    chatbot = chatbots.get(session_id)
+    
+    if chatbot:
+        try:
+            ai_content = chatbot.chat(content)
+        except Exception as e:
+            print(f"Chatbot error: {e}")
+            ai_content = "I'm having trouble processing that. Please try again."
+    else:
+        # No chatbot available - check if preprocessing is needed
+        available_subjects = get_available_subjects()
+        if not available_subjects:
+            ai_content = "Please upload chat files and run 'Refresh AI Memory' from the Knowledge Base first."
+        else:
+            # Try to initialize chatbot
+            subject = available_subjects[0]
+            if initialize_chatbot(session_id, subject):
+                try:
+                    ai_content = chatbots[session_id].chat(content)
+                except Exception as e:
+                    ai_content = f"Error: {str(e)}"
+            else:
+                ai_content = "Failed to initialize the AI. Please check your preprocessed files."
+    
+    # Split AI response into multiple messages to emulate natural conversation
+    # Split on double newlines or single newlines if they look like separate messages
+    import re
+    
+    # Split on newlines but keep it natural
+    raw_parts = re.split(r'\n{1,}', ai_content.strip())
+    
+    # Filter out empty parts and combine very short ones
+    parts = []
+    for part in raw_parts:
+        part = part.strip()
+        if part:
+            parts.append(part)
+    
+    # If no parts or single part, use original content
+    if not parts:
+        parts = [ai_content]
+    
+    # Create multiple AI messages
+    ai_messages = []
+    timestamp = datetime.now().strftime("%I:%M %p")
+    
+    for i, part in enumerate(parts):
+        ai_msg = {
+            "id": uuid_module.uuid4().hex[:8],
+            "role": "assistant",
+            "content": part,
+            "timestamp": timestamp
+        }
+        messages[session_id].append(ai_msg)
+        ai_messages.append(ai_msg)
+    
+    # Update session preview with first message
+    if session_id in sessions and ai_messages:
+        preview_content = ai_messages[0]["content"]
+        sessions[session_id]["preview"] = preview_content[:50] + "..." if len(preview_content) > 50 else preview_content
+    
+    # Save to disk
+    save_session(session_id)
+    
+    return jsonify({
+        "user_message": user_msg,
+        "ai_message": ai_messages[0] if len(ai_messages) == 1 else ai_messages[0],
+        "ai_messages": ai_messages  # Return all messages
+    })
+
+
+@app.route("/api/subjects", methods=["GET"])
+def list_subjects():
+    """List available subjects from preprocessed folder."""
+    return jsonify({
+        "subjects": get_available_subjects()
+    })
+
+
 if __name__ == "__main__":
+    # Import datetime for chat
+    from datetime import datetime
+    
     print("Starting NullTale API on http://localhost:5000")
     print(f"Upload directory: {UPLOAD_DIR}")
     print(f"Root .env loaded from: {ROOT_DIR / '.env'}")

@@ -29,13 +29,8 @@ export function ChatInterface({ sessionId = "1", sessionName = "Alan Turing" }) 
                 setMessages(data.messages || []);
             } catch (error) {
                 console.error("Failed to fetch messages:", error);
-                // Fallback to default message
-                setMessages([{
-                    id: 1,
-                    role: "assistant",
-                    content: `Hello. I am initialized with the cognitive patterns of ${sessionName}. How may I assist in your computations today?`,
-                    timestamp: "10:23 AM"
-                }]);
+                // Start with empty messages
+                setMessages([]);
             }
         }
         fetchMessages();
@@ -62,7 +57,9 @@ export function ChatInterface({ sessionId = "1", sessionName = "Alan Turing" }) 
             // Replace temp message with real ones
             setMessages(prev => {
                 const filtered = prev.filter(m => m.id !== tempUserMsg.id);
-                return [...filtered, response.user_message, response.ai_message];
+                // Use ai_messages array if available, otherwise use single ai_message
+                const aiMessages = response.ai_messages || [response.ai_message];
+                return [...filtered, response.user_message, ...aiMessages];
             });
         } catch (error) {
             console.error("Failed to send message:", error);
@@ -409,11 +406,22 @@ export function ChatInterface({ sessionId = "1", sessionName = "Alan Turing" }) 
                         initial={{ opacity: 0 }}
                         animate={{ opacity: 1 }}
                         exit={{ opacity: 0 }}
-                        className="flex-1 flex flex-col"
+                        className="flex-1 flex flex-col min-h-0 overflow-hidden"
                     >
                         {/* Chat Area */}
-                        <ScrollArea className="flex-1 px-3 sm:px-6 py-4 sm:py-6" ref={scrollRef}>
-                            <div className="space-y-4 sm:space-y-6 max-w-2xl sm:max-w-3xl mx-auto">
+                        <ScrollArea className="flex-1 px-3 sm:px-6 py-4 sm:py-6 overflow-y-auto" ref={scrollRef}>
+                            <div className="space-y-4 sm:space-y-6 max-w-2xl sm:max-w-3xl mx-auto pb-4">
+                                {messages.length === 0 && !isLoading && (
+                                    <div className="flex flex-col items-center justify-center py-12 text-center">
+                                        <div className="w-16 h-16 rounded-full bg-primary/20 flex items-center justify-center mb-4">
+                                            <CpuIcon size={32} className="text-primary" />
+                                        </div>
+                                        <h3 className="text-lg font-medium text-white mb-2">Start a conversation</h3>
+                                        <p className="text-sm text-muted-foreground max-w-xs">
+                                            Type a message below to begin chatting. Make sure you've uploaded chat files and refreshed AI Memory first.
+                                        </p>
+                                    </div>
+                                )}
                                 {messages.map((msg) => (
                                     <div
                                         key={msg.id}
@@ -430,12 +438,12 @@ export function ChatInterface({ sessionId = "1", sessionName = "Alan Turing" }) 
                                         </div>
 
                                         <div className={cn(
-                                            "p-3 sm:p-4 rounded-lg sm:rounded-2xl text-xs sm:text-sm leading-relaxed",
+                                            "p-3 sm:p-4 rounded-lg sm:rounded-2xl text-xs sm:text-sm leading-relaxed break-words overflow-hidden",
                                             msg.role === "assistant"
                                                 ? "bg-white/5 border border-white/5 text-gray-200 rounded-tl-none"
                                                 : "bg-primary text-white shadow-lg shadow-primary/20 rounded-tr-none"
                                         )}>
-                                            {msg.content}
+                                            <span className="whitespace-pre-wrap">{msg.content}</span>
                                             <div className={cn(
                                                 "text-[8px] sm:text-[10px] mt-2 opacity-50",
                                                 msg.role === "user" ? "text-right" : ""
