@@ -28,6 +28,7 @@ backend/jorvan testing ground/data
 backend/jorvan testing ground/__pycache__
 backend/jorvan testing ground/preprocessed
 backend/jorvan testing ground/.env
+backend/uploads/
 
 .env
 backend/credentials/*

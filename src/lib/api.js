@@ -48,9 +48,17 @@ export async function deleteSession(sessionId) {
 }
 
 // --- Files ---
-export async function uploadFile(file, fileType) {
+export async function uploadFile(files, fileType) {
     const formData = new FormData();
-    formData.append('file', file);
+
+    // Support both single file and FileList
+    if (files instanceof FileList || Array.isArray(files)) {
+        for (const file of files) {
+            formData.append('file', file);
+        }
+    } else {
+        formData.append('file', files);
+    }
 
     const response = await fetch(`${API_BASE}/files/${fileType}`, {
         method: 'POST',
@@ -63,6 +71,30 @@ export async function uploadFile(file, fileType) {
 export async function listFiles(fileType) {
     const response = await fetch(`${API_BASE}/files/${fileType}`);
     if (!response.ok) throw new Error('Failed to list files');
+    return response.json();
+}
+
+export async function getParticipants(fileType, fileId) {
+    const response = await fetch(`${API_BASE}/files/${fileType}/${fileId}/participants`);
+    if (!response.ok) throw new Error('Failed to get participants');
+    return response.json();
+}
+
+export async function setSubject(fileType, fileId, subject) {
+    const response = await fetch(`${API_BASE}/files/${fileType}/${fileId}/subject`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ subject }),
+    });
+    if (!response.ok) throw new Error('Failed to set subject');
+    return response.json();
+}
+
+export async function deleteUploadedFile(fileType, fileId) {
+    const response = await fetch(`${API_BASE}/files/${fileType}/${fileId}`, {
+        method: 'DELETE',
+    });
+    if (!response.ok) throw new Error('Failed to delete file');
     return response.json();
 }
 
