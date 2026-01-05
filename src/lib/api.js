@@ -105,10 +105,12 @@ export async function checkRefreshReady() {
     return response.json();
 }
 
-export async function refreshAIMemory({ onProgress, onComplete, onError }) {
+export async function refreshAIMemory({ sessionId, onProgress, onComplete, onError }) {
     try {
         const response = await fetch(`${API_BASE}/refresh`, {
             method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ session_id: sessionId }),
         });
 
         if (!response.ok) {
@@ -138,7 +140,7 @@ export async function refreshAIMemory({ onProgress, onComplete, onError }) {
                             onComplete(data);
                         } else if (data.step === 'error' && onError) {
                             onError(data.message);
-                        } else if (onProgress) {
+                        } else if (data.step === 'progress' && onProgress) {
                             onProgress(data);
                         }
                     } catch (e) {
@@ -254,4 +256,26 @@ export async function warmupModels() {
         console.warn('Warmup failed:', e);
         return { status: 'error' };
     }
+}
+
+// --- Voice Cloning (WaveSpeed) ---
+export async function cloneVoice(sessionId, audioFile) {
+    const formData = new FormData();
+    formData.append('file', audioFile);
+
+    const response = await fetch(`${API_BASE}/voice/clone/${sessionId}`, {
+        method: 'POST',
+        body: formData,
+    });
+    if (!response.ok) {
+        const error = await response.json().catch(() => ({ detail: 'Clone failed' }));
+        throw new Error(error.detail || 'Failed to clone voice');
+    }
+    return response.json();
+}
+
+export async function getVoiceStatus(sessionId) {
+    const response = await fetch(`${API_BASE}/voice/status/${sessionId}`);
+    if (!response.ok) throw new Error('Failed to get voice status');
+    return response.json();
 }

@@ -5,10 +5,10 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { FileText, Mic, Upload, RefreshCw, Check, X, MessageSquare, Instagram, HelpCircle, User, Trash2, AlertCircle, CheckCircle2 } from "lucide-react";
+import { FileText, Mic, Upload, RefreshCw, Check, X, MessageSquare, Instagram, HelpCircle, User, Trash2, AlertCircle, CheckCircle2, Clock } from "lucide-react";
 import { Progress } from "@/components/ui/progress";
 import { motion, AnimatePresence } from "framer-motion";
-import { uploadFile, refreshAIMemory, checkRefreshReady, setSubject, deleteUploadedFile, listFiles } from "@/lib/api";
+import { uploadFile, refreshAIMemory, checkRefreshReady, setSubject, deleteUploadedFile, listFiles, cloneVoice, getVoiceStatus } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
 // File type badge component
@@ -39,7 +39,7 @@ function formatFileSize(bytes) {
     return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
 }
 
-export function FilesModal({ open, onOpenChange }) {
+export function FilesModal({ open, onOpenChange, currentSession }) {
     const [isRefreshing, setIsRefreshing] = useState(false);
     const [progress, setProgress] = useState(0);
     const [progressMessage, setProgressMessage] = useState('');
@@ -51,15 +51,32 @@ export function FilesModal({ open, onOpenChange }) {
     const [refreshError, setRefreshError] = useState(null);
     const [successMessage, setSuccessMessage] = useState(null);
 
+    // Voice cloning state
+    const [voiceStatus, setVoiceStatus] = useState(null);
+    const [cloning, setCloning] = useState(false);
+
     const textInputRef = useRef(null);
     const voiceInputRef = useRef(null);
 
-    // Load files from server on modal open
+    // Load files and voice status on modal open
     useEffect(() => {
         if (open) {
             refreshFileList();
+            if (currentSession?.id) {
+                fetchVoiceStatus();
+            }
         }
-    }, [open]);
+    }, [open, currentSession?.id]);
+
+    const fetchVoiceStatus = async () => {
+        if (!currentSession?.id) return;
+        try {
+            const status = await getVoiceStatus(currentSession.id);
+            setVoiceStatus(status);
+        } catch (error) {
+            console.error("Failed to fetch voice status:", error);
+        }
+    };
 
     const refreshFileList = async () => {
         try {
@@ -78,6 +95,29 @@ export function FilesModal({ open, onOpenChange }) {
         }
     };
 
+    // Upload voice file for staging (NOT immediate cloning)
+    const handleVoiceUpload = async (file) => {
+        if (!currentSession?.id) {
+            setUploadError("Please select a personality first to upload a voice.");
+            return;
+        }
+
+        setUploading(true);
+        setUploadError(null);
+
+        try {
+            // Stage voice file locally - will be cloned on Refresh
+            await uploadFile(file, 'voice');
+            await refreshFileList();
+            setSuccessMessage(`Voice file staged for ${currentSession.name}. Click 'Refresh AI Memory' to clone.`);
+            setTimeout(() => setSuccessMessage(null), 5000);
+        } catch (error) {
+            setUploadError(error.message || "Failed to upload voice file.");
+        } finally {
+            setUploading(false);
+        }
+    };
+
     const handleRefresh = async () => {
         setIsRefreshing(true);
         setProgress(0);
@@ -85,18 +125,32 @@ export function FilesModal({ open, onOpenChange }) {
         setRefreshError(null);
 
         await refreshAIMemory({
+            sessionId: currentSession?.id,
             onProgress: (data) => {
                 setProgress(Math.round(data.progress));
                 setProgressMessage(data.message);
             },
-            onComplete: (data) => {
+            onComplete: async (data) => {
                 setProgress(100);
                 setProgressMessage(data.message);
+
+                // Refresh voice status after cloning
+                await fetchVoiceStatus();
+                await refreshFileList();
+
                 setTimeout(() => {
                     setIsRefreshing(false);
                     setProgressMessage('');
-                    setSuccessMessage('AI Memory refreshed successfully!');
-                    // Auto-dismiss after 5 seconds
+
+                    // Check for voice cloning result
+                    if (data.voice_cloning?.success) {
+                        setSuccessMessage(data.voice_cloning.message || 'Voice cloned successfully!');
+                    } else if (data.voice_cloning?.error) {
+                        setRefreshError(`Voice cloning failed: ${data.voice_cloning.error}`);
+                    } else {
+                        setSuccessMessage('AI Memory refreshed successfully!');
+                    }
+
                     setTimeout(() => setSuccessMessage(null), 5000);
                 }, 1000);
             },
@@ -380,15 +434,81 @@ export function FilesModal({ open, onOpenChange }) {
                                 </div>
                             </TabsContent>
 
-                            <TabsContent value="voice" className="mt-0">
-                                <UploadZone
-                                    fileType="voice"
-                                    icon={Mic}
-                                    title="Upload voice notes or recordings"
-                                    accept=".mp3,.wav,.ogg,.m4a"
-                                    inputRef={voiceInputRef}
-                                    description="MP3, WAV for voice synthesis"
-                                />
+                            <TabsContent value="voice" className="mt-0 space-y-4">
+                                {/* Voice Status Banner */}
+                                {currentSession && voiceStatus && (
+                                    <div className={cn(
+                                        "p-4 rounded-lg border",
+                                        voiceStatus.voice_status === "active" && "bg-green-500/10 border-green-500/20",
+                                        voiceStatus.voice_status === "warning" && "bg-orange-500/10 border-orange-500/20",
+                                        voiceStatus.voice_status === "expired" && "bg-red-500/10 border-red-500/20",
+                                        voiceStatus.voice_status === "none" && "bg-white/5 border-white/10"
+                                    )}>
+                                        <div className="flex items-center gap-3">
+                                            {voiceStatus.voice_status === "active" && <CheckCircle2 size={20} className="text-green-400" />}
+                                            {voiceStatus.voice_status === "warning" && <Clock size={20} className="text-orange-400" />}
+                                            {voiceStatus.voice_status === "expired" && <AlertCircle size={20} className="text-red-400" />}
+                                            {voiceStatus.voice_status === "none" && <Mic size={20} className="text-muted-foreground" />}
+                                            <div>
+                                                <p className="text-sm font-medium">{voiceStatus.message}</p>
+                                                {voiceStatus.days_remaining !== undefined && voiceStatus.days_remaining > 0 && (
+                                                    <p className="text-xs text-muted-foreground">
+                                                        Expires in {voiceStatus.days_remaining} day(s)
+                                                    </p>
+                                                )}
+                                            </div>
+                                        </div>
+                                    </div>
+                                )}
+
+                                {!currentSession && (
+                                    <div className="p-4 rounded-lg bg-white/5 border border-white/10 text-center">
+                                        <p className="text-sm text-muted-foreground">
+                                            Select a personality first to upload a voice for cloning.
+                                        </p>
+                                    </div>
+                                )}
+
+                                {/* Voice Upload Zone */}
+                                {currentSession && (
+                                    <>
+                                        <input
+                                            type="file"
+                                            ref={voiceInputRef}
+                                            onChange={(e) => {
+                                                if (e.target.files?.[0]) {
+                                                    handleVoiceUpload(e.target.files[0]);
+                                                }
+                                                e.target.value = '';
+                                            }}
+                                            className="hidden"
+                                            accept=".mp3,.wav,.m4a"
+                                        />
+                                        <div
+                                            className={cn(
+                                                "border-2 border-dashed rounded-lg p-8 flex flex-col items-center justify-center text-center transition-colors cursor-pointer group",
+                                                uploading ? "border-primary/50 bg-primary/5" : "border-white/10 hover:border-primary/50 hover:bg-primary/5"
+                                            )}
+                                            onClick={() => !uploading && voiceInputRef.current?.click()}
+                                        >
+                                            <div className={cn(
+                                                "w-12 h-12 rounded-full flex items-center justify-center mb-4 transition-colors",
+                                                uploading ? "bg-primary/20 animate-pulse" : "bg-white/5 group-hover:bg-primary/20"
+                                            )}>
+                                                <Mic size={24} className={uploading ? "text-primary" : "group-hover:text-primary"} />
+                                            </div>
+                                            <p className="text-sm font-medium">
+                                                {uploading ? "Uploading..." : `Upload voice for ${currentSession.name}`}
+                                            </p>
+                                            <p className="text-xs text-muted-foreground mt-1">
+                                                10 seconds - 5 minutes of clear audio (MP3, WAV, M4A)
+                                            </p>
+                                            <p className="text-xs text-orange-400 mt-2">
+                                                ⚠️ Click "Refresh AI Memory" after upload to clone voice
+                                            </p>
+                                        </div>
+                                    </>
+                                )}
                             </TabsContent>
                         </div>
                     </Tabs>

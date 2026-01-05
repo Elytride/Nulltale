@@ -118,7 +118,7 @@ export default function Home() {
                 )}
             </main>
 
-            <FilesModal open={filesOpen} onOpenChange={setFilesOpen} />
+            <FilesModal open={filesOpen} onOpenChange={setFilesOpen} currentSession={currentSession} />
             <SettingsModal open={settingsOpen} onOpenChange={setSettingsOpen} />
         </div>
     );

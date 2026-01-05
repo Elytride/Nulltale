@@ -13,7 +13,8 @@ export function SettingsModal({ open, onOpenChange }) {
     const [settings, setSettings] = useState({
         model_version: "v2.4",
         temperature: 0.7,
-        api_key: "sk-........................"
+        api_key: "sk-........................",
+        wavespeed_api_key: ""
     });
     const [isSaving, setIsSaving] = useState(false);
     const [isLoading, setIsLoading] = useState(true);
@@ -104,6 +105,23 @@ export function SettingsModal({ open, onOpenChange }) {
                                     step={0.1}
                                     className="[&>span:first-child]:bg-primary"
                                 />
+                            </div>
+                        </div>
+
+                        <div className="space-y-4">
+                            <h4 className="text-sm font-medium text-muted-foreground uppercase tracking-wider">Voice Synthesis</h4>
+                            <div className="grid gap-2">
+                                <Label>WaveSpeed API Key</Label>
+                                <Input
+                                    type="password"
+                                    value={settings.wavespeed_api_key || ""}
+                                    onChange={(e) => setSettings(prev => ({ ...prev, wavespeed_api_key: e.target.value }))}
+                                    placeholder="Enter key for voice cloning..."
+                                    className="bg-white/5 border-white/10 font-mono"
+                                />
+                                <p className="text-xs text-muted-foreground">
+                                    Get your key from <a href="https://wavespeed.ai" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">wavespeed.ai</a>. Required for custom voice cloning.
+                                </p>
                             </div>
                         </div>
 

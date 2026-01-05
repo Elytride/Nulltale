@@ -1,0 +1,20 @@
+{
+  "code": 200,
+  "message": "success",
+  "data": {
+    "id": "8b8983215fb34a9e8bc8504dbcfeab4d",
+    "model": "minimax/voice-clone",
+    "outputs": [],
+    "urls": {
+      "get": "https://api.wavespeed.ai/api/v3/predictions/8b8983215fb34a9e8bc8504dbcfeab4d/result"
+    },
+    "has_nsfw_contents": [],
+    "status": "created",
+    "created_at": "2026-01-05T11:06:11.116Z",
+    "error": "",
+    "executionTime": 0,
+    "timings": {
+      "inference": 0
+    }
+  }
+}

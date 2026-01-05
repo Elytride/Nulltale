@@ -9,7 +9,8 @@ import {
     MoreVertical,
     Cpu,
     HelpCircle,
-    ChevronDown
+    ChevronDown,
+    AlertTriangle
 } from "lucide-react";
 import {
     DropdownMenu,
@@ -164,12 +165,20 @@ export function Sidebar({ onOpenFiles, onOpenSettings, onSessionChange }) {
                                         activeSession === session.id ? "bg-primary shadow-[0_0_8px_rgba(124,58,237,0.5)]" : "bg-muted-foreground/30"
                                     )} />
                                     <div className="flex flex-col overflow-hidden">
-                                        <span className={cn(
-                                            "text-sm font-medium truncate",
-                                            activeSession === session.id ? "text-white" : "text-muted-foreground group-hover:text-white"
-                                        )}>
-                                            {session.name}
-                                        </span>
+                                        <div className="flex items-center gap-1.5">
+                                            <span className={cn(
+                                                "text-sm font-medium truncate",
+                                                activeSession === session.id ? "text-white" : "text-muted-foreground group-hover:text-white"
+                                            )}>
+                                                {session.name}
+                                            </span>
+                                            {session.voice_status === "expired" && (
+                                                <AlertTriangle size={12} className="text-red-400 flex-shrink-0" title="Voice expired - please re-upload" />
+                                            )}
+                                            {session.voice_status === "warning" && (
+                                                <AlertTriangle size={12} className="text-orange-400 flex-shrink-0" title={`Voice expires in ${session.days_until_expiry} day(s)`} />
+                                            )}
+                                        </div>
                                         <span className="text-xs text-muted-foreground truncate opacity-60">
                                             {session.preview}
                                         </span>
