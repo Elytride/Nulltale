@@ -280,31 +280,21 @@ async def stream_voice_call(message: CallMessage):
             
             if api_key and wavespeed_voice_id:
                 try:
-                    # Use WaveSpeed for TTS with cloned voice
+                    # Use WaveSpeed for TTS with cloned voice (streaming)
                     ws = WaveSpeedManager(api_key=api_key)
-                    audio_buffer = ws.speak(full_text, wavespeed_voice_id)
-                    audio_bytes = audio_buffer.read()
-                    audio_b64 = base64.b64encode(audio_bytes).decode('utf-8')
-                    yield f"data: {json.dumps({'type': 'audio', 'index': 0, 'content': audio_b64})}\n\n"
-                    
+                    chunk_index = 0
+                    for audio_chunk in ws.speak_stream(full_text, wavespeed_voice_id):
+                        audio_b64 = base64.b64encode(audio_chunk).decode('utf-8')
+                        yield f"data: {json.dumps({'type': 'audio', 'index': chunk_index, 'content': audio_b64})}\n\n"
+                        chunk_index += 1
+                        
                     # Update last_used_at to extend expiration
                     session["voice_last_used_at"] = datetime.now().isoformat()
                 except Exception as voice_err:
                     print(f"WaveSpeed voice error: {voice_err}")
                     yield f"data: {json.dumps({'type': 'status', 'content': 'voice_error'})}\n\n"
-            elif api_key:
-                # No cloned voice, use system voice fallback
-                try:
-                    ws = WaveSpeedManager(api_key=api_key)
-                    audio_buffer = ws.speak(full_text, "Deep_Voice_Man")  # System voice fallback
-                    audio_bytes = audio_buffer.read()
-                    audio_b64 = base64.b64encode(audio_bytes).decode('utf-8')
-                    yield f"data: {json.dumps({'type': 'audio', 'index': 0, 'content': audio_b64})}\n\n"
-                except Exception as voice_err:
-                    print(f"WaveSpeed system voice error: {voice_err}")
-                    yield f"data: {json.dumps({'type': 'status', 'content': 'voice_error'})}\n\n"
             else:
-                # No API key configured, skip audio
+                # No cloned voice or API key configured, skip audio
                 yield f"data: {json.dumps({'type': 'status', 'content': 'no_voice_configured'})}\n\n"
             
             # Done

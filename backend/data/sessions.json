@@ -7,7 +7,7 @@
     "voice": "test_voice",
     "wavespeed_voice_id": "NullTale1AlanTuring151424",
     "voice_created_at": "2026-01-12T01:10:38.530607",
-    "voice_last_used_at": "2026-01-12T01:10:38.530607"
+    "voice_last_used_at": "2026-01-12T01:29:48.407498"
   },
   "af573012": {
     "id": "af573012",
@@ -15,9 +15,9 @@
     "preview": "New conversation started...",
     "system_prompt": "You are me. Be helpful and engaging. Keep responses concise for voice synthesis.",
     "voice": "test_voice",
-    "wavespeed_voice_id": "testing0123",
-    "voice_created_at": "2026-01-05T18:28:38.478596",
-    "voice_last_used_at": "2026-01-05T18:48:31.459288"
+    "wavespeed_voice_id": "NullTaleaf573012me152674",
+    "voice_created_at": "2026-01-12T01:31:28.959630",
+    "voice_last_used_at": "2026-01-12T01:31:28.959630"
   },
   "d1d3dd50": {
     "id": "d1d3dd50",

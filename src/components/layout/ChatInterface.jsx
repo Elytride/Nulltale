@@ -152,6 +152,7 @@ export function ChatInterface({ sessionId = "1", sessionName = "Alan Turing" }) 
     const isCallActiveRef = useRef(false); // Ref to avoid stale closure
     const callStatusRef = useRef("idle"); // Ref to avoid stale closure for callStatus
     const onAudioFinishedRef = useRef(null); // Callback when all audio done
+    const pendingDecodesRef = useRef(0); // Track active decodes
 
     // Helper to update callStatus (both state and ref)
     const updateCallStatus = (status) => {
@@ -169,6 +170,7 @@ export function ChatInterface({ sessionId = "1", sessionName = "Alan Turing" }) 
 
     // Play audio from base64 WAV data
     const playAudioChunk = async (base64Audio) => {
+        pendingDecodesRef.current += 1;
         try {
             const audioContext = initAudioContext();
             const binaryString = atob(base64Audio);
@@ -182,17 +184,22 @@ export function ChatInterface({ sessionId = "1", sessionName = "Alan Turing" }) 
 
             // Queue for sequential playback
             audioQueueRef.current.push(audioBuffer);
-            playNextInQueue();
         } catch (e) {
             console.error("Audio decode error:", e);
+        } finally {
+            pendingDecodesRef.current -= 1;
+            // Try to play next
+            playNextInQueue();
         }
     };
 
     // Play audio chunks sequentially
     const playNextInQueue = () => {
-        if (isPlayingRef.current || audioQueueRef.current.length === 0) {
-            // If queue is empty and not playing, call the onAudioFinished callback
-            if (!isPlayingRef.current && audioQueueRef.current.length === 0 && onAudioFinishedRef.current) {
+        if (isPlayingRef.current) return;
+
+        if (audioQueueRef.current.length === 0) {
+            // Only finish if no chunks are being decoded
+            if (pendingDecodesRef.current === 0 && onAudioFinishedRef.current) {
                 const callback = onAudioFinishedRef.current;
                 onAudioFinishedRef.current = null;
                 callback();

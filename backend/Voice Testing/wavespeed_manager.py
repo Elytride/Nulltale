@@ -38,6 +38,7 @@ class WaveSpeedManager:
     BASE_URL = "https://api.wavespeed.ai"
     CLONE_ENDPOINT = "/api/v3/minimax/voice-clone"
     TTS_ENDPOINT = "/api/v3/minimax/speech-2.6-turbo"
+    TTS_STREAM_ENDPOINT = "/api/v3/minimax/speech-2.6-turbo/stream"
     
     # System voices (no cloning needed)
     SYSTEM_VOICES = [
@@ -53,7 +54,7 @@ class WaveSpeedManager:
         "speed": 1.0,
         "volume": 1.0,
         "pitch": 0,
-        "sample_rate": 24000,
+        "sample_rate": 32000,
         "format": "wav",
         "english_normalization": True
     }
@@ -154,7 +155,7 @@ class WaveSpeedManager:
         
         # Step 2: Call voice clone endpoint with the uploaded audio URL
         payload = {
-            "model": "speech-02-hd",
+            "model": "speech-2.6-turbo",
             "audio": audio_url,
             "custom_voice_id": voice_id,
             "text": "Hello, this is a test of my cloned voice."
@@ -367,6 +368,227 @@ class WaveSpeedManager:
                 raise Exception("TTS timeout: job did not complete in 30 seconds")
             
             raise Exception(f"No audio in response: {result}")
+    
+    def speak_stream(
+        self, 
+        text: str, 
+        voice: str = None,
+        **kwargs
+    ):
+        """
+        Generate speech from text with real-time streaming.
+        Uses WaveSpeed's /stream endpoint for true chunked audio delivery.
+        
+        Args:
+            text: Text to speak (max 10,000 characters)
+            voice: Voice name (cloned voice ID)
+            **kwargs: Optional overrides (speed, volume, pitch, etc.)
+        
+        Yields:
+            bytes: WAV audio chunks for browser playback
+        """
+        import struct
+        import base64
+        import json as json_lib
+        
+        if not text:
+            raise ValueError("Text cannot be empty")
+        
+        if len(text) > 10000:
+            raise ValueError("Text exceeds 10,000 character limit")
+        
+        # Resolve voice ID
+        voice_id = self._cloned_voices.get(voice, voice)
+        
+        # WaveSpeed returns audio at 32000 Hz
+        sample_rate = 32000
+        
+        # Build request for streaming endpoint
+        payload = {
+            "model": "speech-2.6-turbo",
+            "text": text,
+            "voice_id": voice_id,
+            "sample_rate": sample_rate,
+            "format": "pcm",
+            "speed": kwargs.get("speed", 1.0),
+            "volume": kwargs.get("volume", 1.0),
+            "pitch": kwargs.get("pitch", 0),
+            "english_normalization": True
+        }
+        
+        logger.info(f"Starting TRUE streaming TTS with voice '{voice_id}'...")
+        
+        # Use streaming endpoint with SSE
+        response = requests.post(
+            f"{self.BASE_URL}{self.TTS_STREAM_ENDPOINT}",
+            headers=self.headers,
+            json=payload,
+            stream=True
+        )
+        
+        # DEBUG logging
+        print(f"[DEBUG] Stream response status: {response.status_code}")
+        print(f"[DEBUG] Stream response content-type: {response.headers.get('Content-Type')}")
+        
+        if response.status_code != 200:
+            # Fall back to polling method if streaming endpoint doesn't exist
+            print(f"[DEBUG] Stream endpoint failed, falling back to polling...")
+            logger.warning(f"Stream endpoint failed ({response.status_code}), falling back to polling...")
+            for chunk in self._speak_polling(text, voice_id, sample_rate, **kwargs):
+                yield chunk
+            return
+        
+        content_type = response.headers.get("Content-Type", "")
+        
+        # Create WAV header function
+        def make_wav_header(data_size, sr=32000, channels=1, bits=16):
+            byte_rate = sr * channels * bits // 8
+            block_align = channels * bits // 8
+            return struct.pack(
+                '<4sI4s4sIHHIIHH4sI',
+                b'RIFF', 36 + data_size, b'WAVE', b'fmt ', 16, 1,
+                channels, sr, byte_rate, block_align, bits,
+                b'data', data_size
+            )
+        
+        if "text/event-stream" in content_type:
+            # True SSE streaming - parse event stream
+            print(f"[DEBUG] Entering SSE streaming path")
+            pcm_buffer = b''
+            # NOTE: Increased buffer to ~0.5s (32000 bytes) to prevent frontend playback gaps/glitches
+            chunk_size_target = 32000  # ~500ms of audio at 32kHz 16-bit mono
+            chunk_count = 0
+            
+            for line in response.iter_lines():
+                if line:
+                    line_str = line.decode('utf-8')
+                    if line_str.startswith('data:'):
+                        data = line_str[5:].strip()
+                        if data and data != '[DONE]':
+                            try:
+                                event_data = json_lib.loads(data)
+                                inner_data = event_data.get('data', {})
+                                
+                                # Check completion
+                                status = inner_data.get('status')
+                                # Status 1 = Processing/Streaming
+                                # Status 2 = Completed
+                                is_done = (status == 2)
+                                
+                                # Extract audio chunk
+                                # NOTE: WaveSpeed returns HEX string, not base64!
+                                # Only process audio from status 1 (streaming/incremental).
+                                # Status 2 (completed) contains the FULL audio, which causes duplication if processed.
+                                if status == 1:
+                                    audio_hex = inner_data.get('audio')
+                                else:
+                                    audio_hex = None
+                                
+                                if audio_hex and isinstance(audio_hex, str):
+                                    # Convert hex string to bytes
+                                    try:
+                                        audio_bytes = bytes.fromhex(audio_hex)
+                                        pcm_buffer += audio_bytes
+                                        
+                                        # Yield chunks when we have enough data
+                                        while len(pcm_buffer) >= chunk_size_target:
+                                            chunk = pcm_buffer[:chunk_size_target]
+                                            pcm_buffer = pcm_buffer[chunk_size_target:]
+                                            wav_header = make_wav_header(len(chunk), sample_rate)
+                                            yield wav_header + chunk
+                                    except ValueError:
+                                        pass
+                                
+                                if is_done:
+                                    break
+                            except Exception:
+                                pass
+            
+            # Yield remaining data
+            if pcm_buffer:
+                wav_header = make_wav_header(len(pcm_buffer), sample_rate)
+                yield wav_header + pcm_buffer
+        else:
+            # Response is not SSE, might be direct audio or JSON
+            # Fall back to polling
+            print(f"[DEBUG] Not SSE, falling back to polling. Content-type: {content_type}")
+            for chunk in self._speak_polling(text, voice_id, sample_rate, **kwargs):
+                yield chunk
+    
+    def _speak_polling(self, text, voice_id, sample_rate, **kwargs):
+        """Fallback polling-based TTS."""
+        import struct
+        import time
+        
+        payload = {
+            "model": "speech-2.6-turbo",
+            "text": text,
+            "voice_id": voice_id,
+            "sample_rate": sample_rate,
+            "format": "pcm",
+            "speed": kwargs.get("speed", 1.0),
+            "volume": kwargs.get("volume", 1.0),
+            "pitch": kwargs.get("pitch", 0),
+            "english_normalization": True
+        }
+        
+        response = requests.post(
+            f"{self.BASE_URL}{self.TTS_ENDPOINT}",
+            headers=self.headers,
+            json=payload
+        )
+        
+        if response.status_code != 200:
+            raise Exception(f"TTS failed: {response.status_code} - {response.text}")
+        
+        result = response.json()
+        data_obj = result.get("data") if isinstance(result.get("data"), dict) else {}
+        result_url = data_obj.get("urls", {}).get("get")
+        
+        if result_url:
+            max_attempts = 30
+            for attempt in range(max_attempts):
+                time.sleep(1)
+                poll_response = requests.get(result_url, headers=self.headers)
+                if poll_response.status_code == 200:
+                    poll_result = poll_response.json()
+                    poll_data = poll_result.get("data") if isinstance(poll_result.get("data"), dict) else {}
+                    status = poll_data.get("status") or poll_result.get("status")
+                    
+                    if status == "completed":
+                        outputs = poll_data.get("outputs") or poll_result.get("outputs", [])
+                        if outputs and len(outputs) > 0:
+                            first_output = outputs[0]
+                            if isinstance(first_output, str):
+                                audio_url = first_output
+                            elif isinstance(first_output, dict):
+                                audio_url = first_output.get("audio") or first_output.get("url")
+                            else:
+                                audio_url = None
+                            
+                            if audio_url:
+                                audio_response = requests.get(audio_url)
+                                audio_data = audio_response.content
+                                
+                                def make_wav_header(data_size, sr=32000, channels=1, bits=16):
+                                    byte_rate = sr * channels * bits // 8
+                                    block_align = channels * bits // 8
+                                    return struct.pack(
+                                        '<4sI4s4sIHHIIHH4sI',
+                                        b'RIFF', 36 + data_size, b'WAVE', b'fmt ', 16, 1,
+                                        channels, sr, byte_rate, block_align, bits,
+                                        b'data', data_size
+                                    )
+                                
+                                wav_header = make_wav_header(len(audio_data), sample_rate)
+                                yield wav_header + audio_data
+                                return
+                    elif status == "failed":
+                        error = poll_data.get("error") or poll_result.get("error", "Unknown")
+                        raise Exception(f"TTS failed: {error}")
+            
+            raise Exception("TTS timeout")
+
     
     def list_voices(self) -> dict:
         """
