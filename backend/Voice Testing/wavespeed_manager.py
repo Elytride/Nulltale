@@ -117,17 +117,47 @@ class WaveSpeedManager:
         
         logger.info(f"Cloning voice '{voice_id}' from {audio_file.name}...")
         
-        # Read and base64 encode the audio file
+        # Step 1: Upload audio file to WaveSpeed Media Upload API
+        mime_type = self._get_mime_type(audio_file)
         with open(audio_file, "rb") as f:
-            audio_data = f.read()
+            files = {"file": (audio_file.name, f, mime_type)}
+            upload_response = requests.post(
+                f"{self.BASE_URL}/api/v3/media/upload/binary",
+                headers={"Authorization": f"Bearer {self.api_key}"},
+                files=files
+            )
         
-        # Create base64 string (WaveSpeed likely expects raw base64, not data URI)
-        audio_base64 = base64.b64encode(audio_data).decode('utf-8')
+        if upload_response.status_code != 200:
+            raise Exception(f"Audio upload failed: {upload_response.status_code} - {upload_response.text}")
         
-        # Send as JSON (WaveSpeed API expects application/json)
+        upload_result = upload_response.json()
+        
+        # DEBUG: Log upload response
+        logger.info(f"Upload response: {upload_result}")
+        
+        # Handle different response structures
+        data_obj = upload_result.get("data") if isinstance(upload_result.get("data"), dict) else {}
+        audio_url = (
+            data_obj.get("download_url") or 
+            upload_result.get("download_url") or 
+            upload_result.get("url")
+        )
+        
+        # If data is a string, it might be the URL directly
+        if not audio_url and isinstance(upload_result.get("data"), str):
+            audio_url = upload_result.get("data")
+        
+        if not audio_url:
+            raise Exception(f"No download_url in upload response: {upload_result}")
+        
+        logger.info(f"Audio uploaded successfully: {audio_url}")
+        
+        # Step 2: Call voice clone endpoint with the uploaded audio URL
         payload = {
-            "audio": audio_base64,
-            "custom_voice_id": voice_id
+            "model": "speech-02-hd",
+            "audio": audio_url,
+            "custom_voice_id": voice_id,
+            "text": "Hello, this is a test of my cloned voice."
         }
         
         response = requests.post(
@@ -179,10 +209,18 @@ class WaveSpeedManager:
                                 json.dump(poll_result, f, indent=2)
                         except: pass
 
+                        # Extract voice ID from response
+                        outputs = poll_data.get("outputs", [])
+                        output_voice_id = None
+                        if outputs and len(outputs) > 0:
+                            first_output = outputs[0]
+                            if isinstance(first_output, dict):
+                                output_voice_id = first_output.get("voice_id")
+                        
                         returned_voice_id = (
                             poll_data.get("voice_id") or 
                             poll_data.get("custom_voice_id") or
-                            poll_data.get("outputs", [{}])[0].get("voice_id") if isinstance(poll_data.get("outputs"), list) and poll_data.get("outputs") else None or
+                            output_voice_id or
                             voice_id  # Fallback
                         )
                         break
@@ -344,12 +382,18 @@ class WaveSpeedManager:
     
     def _format_voice_id(self, name: str) -> str:
         """Format voice name to valid voice_id (8+ chars, starts with letter, alphanumeric)."""
+        import time
+        
         # Remove invalid characters
         clean = ''.join(c for c in name if c.isalnum() or c == '_')
         
         # Ensure starts with letter
         if not clean or not clean[0].isalpha():
             clean = "Voice" + clean
+        
+        # Add timestamp suffix for uniqueness
+        timestamp = str(int(time.time()))[-6:]  # Last 6 digits of timestamp
+        clean = clean + timestamp
         
         # Ensure minimum 8 characters
         if len(clean) < 8:
