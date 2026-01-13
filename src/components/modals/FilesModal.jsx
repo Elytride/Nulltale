@@ -19,6 +19,7 @@ function FileTypeBadge({ type }) {
         LINE: { bg: "bg-emerald-500/20", text: "text-emerald-400", icon: MessageSquare, label: "LINE" },
         Discord: { bg: "bg-indigo-500/20", text: "text-indigo-400", icon: MessageSquare, label: "Discord" },
         voice: { bg: "bg-purple-500/20", text: "text-purple-400", icon: Mic, label: "Voice" },
+        InstagramHTML: { bg: "bg-pink-500/20", text: "text-pink-400", icon: Instagram, label: "Instagram" },
         NULL: { bg: "bg-gray-500/20", text: "text-gray-400", icon: HelpCircle, label: "Unknown" },
         unknown: { bg: "bg-gray-500/20", text: "text-gray-400", icon: HelpCircle, label: "Unknown" }
     };

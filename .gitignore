@@ -33,3 +33,5 @@ backend/__pycache__
 backend/credentials/*
 backend/Voice Testing/ffmpeg.exe
 backend/Voice Testing/ffprobe.exe
+
+test_prediction.py

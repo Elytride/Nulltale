@@ -42,7 +42,7 @@ UPLOAD_DIR.mkdir(exist_ok=True)
 (UPLOAD_DIR / "voice").mkdir(exist_ok=True)
 
 # Allowed extensions for text files
-ALLOWED_TEXT_EXTENSIONS = {'.txt', '.json', '.zip'}
+ALLOWED_TEXT_EXTENSIONS = {'.txt', '.json', '.zip', '.html'}
 
 # Storage for pending ZIP uploads (zip_id -> extraction info)
 pending_zips = {}
@@ -180,7 +180,7 @@ def get_file_metadata(file_path):
     
     detected_type = classify_file(str(path))
     participants = []
-    if detected_type in ["WhatsApp", "Instagram", "LINE"]:
+    if detected_type in ["WhatsApp", "Instagram", "InstagramHTML", "LINE"]:
         participants = extract_participants(str(path), detected_type)
     
     return {
@@ -274,7 +274,7 @@ def upload_files(file_type):
         if file_type == "text" and file_ext not in ALLOWED_TEXT_EXTENSIONS:
             rejected.append({
                 "name": file.filename,
-                "reason": f"Only .txt and .json files are accepted"
+                "reason": f"Only .txt, .json, .html and .zip files are accepted"
             })
             continue
         
@@ -413,12 +413,12 @@ def upload_files(file_type):
             
             detected_type = classify_file(str(file_path))
             
-            if detected_type not in ["WhatsApp", "Instagram", "LINE"]:
+            if detected_type not in ["WhatsApp", "Instagram", "InstagramHTML", "LINE"]:
                 # Delete the file and reject
                 file_path.unlink()
                 rejected.append({
                     "name": file.filename,
-                    "reason": "Not a supported chat file. Please upload WhatsApp (.txt), Instagram (.json), LINE (.txt), or ZIP exports."
+                    "reason": "Not a supported chat file. Please upload WhatsApp (.txt), Instagram (.json or .html), LINE (.txt), or ZIP exports."
                 })
                 continue
             

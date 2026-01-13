@@ -4,18 +4,25 @@ import os
 
 def classify_file(file_path):
     """
-    Classifies a file as 'WhatsApp', 'Instagram', 'LINE', or 'NULL'.
+    Classifies a file as 'WhatsApp', 'Instagram', 'InstagramHTML', 'LINE', or 'NULL'.
     """
     try:
         with open(file_path, 'r', encoding='utf-8') as f:
-            content = f.read(4096) # Read first 4KB to check format
+            content = f.read(16384) # Read first 16KB to check format
 
         # Check for LINE (starts with [LINE] header)
         if content.strip().startswith('[LINE]'):
             return 'LINE'
 
-        # Check for Instagram (JSON format with 'participants' and 'messages')
+        # Check for Instagram HTML (HTML format with specific CSS classes)
+        # Instagram HTML exports have: <h2 class="... _a6-h ..."> for sender names
+        # and <div class="... _a6-o"> for timestamps
         content_stripped = content.strip()
+        if content_stripped.startswith('<html') or content_stripped.startswith('<!DOCTYPE'):
+            if '_a6-h' in content and '_a6-o' in content:
+                return 'InstagramHTML'
+
+        # Check for Instagram JSON (JSON format with 'participants' and 'messages')
         if content_stripped.startswith('{') or content_stripped.startswith('['):
              try:
                 # Try parsing the beginning as partial json or just check for keys if text is large
@@ -53,6 +60,17 @@ def extract_participants(file_path, file_type):
                     for p in data['participants']:
                         if 'name' in p:
                             participants.add(p['name'])
+        
+        elif file_type == 'InstagramHTML':
+            with open(file_path, 'r', encoding='utf-8') as f:
+                content = f.read()
+            # Extract sender names from <h2 class="... _a6-h ...">SenderName</h2>
+            # Pattern matches the h2 elements that contain sender names
+            sender_pattern = r'<h2[^>]*class="[^"]*_a6-h[^"]*"[^>]*>([^<]+)</h2>'
+            for match in re.findall(sender_pattern, content):
+                name = match.strip()
+                if name:
+                    participants.add(name)
         
         elif file_type == 'WhatsApp':
             with open(file_path, 'r', encoding='utf-8') as f:
@@ -134,6 +152,86 @@ def parse_instagram_messages(file_path):
         messages.reverse()
     except Exception as e:
         print(f"Error parsing Instagram file {file_path}: {e}")
+    
+    return messages
+
+
+def parse_instagram_html_messages(file_path):
+    """
+    Parse Instagram HTML file and return list of (datetime, sender, content) tuples.
+    Messages are returned in chronological order (oldest first).
+    
+    HTML structure:
+    <div class="pam _3-95 _2ph- _a6-g uiBoxWhite noborder">
+        <h2 class="... _a6-h ...">SenderName</h2>
+        <div class="_3-95 _a6-p">
+            <div><div></div><div>MessageContent</div>...</div>
+        </div>
+        <div class="_3-94 _a6-o">Jan 08, 2026 4:41 am</div>
+    </div>
+    """
+    messages = []
+    try:
+        with open(file_path, 'r', encoding='utf-8') as f:
+            content = f.read()
+        
+        # Pattern to match each message block
+        # We need to extract: sender (h2._a6-h), content (div._a6-p), timestamp (div._a6-o)
+        
+        # Pattern for message blocks - match from "pam _3-95" div to the timestamp
+        block_pattern = r'<div class="pam _3-95 _2ph- _a6-g uiBoxWhite noborder">(.*?)</div>\s*<div class="_3-94 _a6-o">([^<]+)</div>'
+        
+        for block_match in re.finditer(block_pattern, content, re.DOTALL):
+            block_content = block_match.group(1)
+            timestamp_str = block_match.group(2).strip()
+            
+            # Extract sender name from h2 with _a6-h class
+            sender_match = re.search(r'<h2[^>]*class="[^"]*_a6-h[^"]*"[^>]*>([^<]+)</h2>', block_content)
+            if not sender_match:
+                continue
+            sender = sender_match.group(1).strip()
+            
+            # Extract message content from div._a6-p
+            # The structure is: <div class="_3-95 _a6-p"><div><div></div><div>CONTENT</div>...</div></div>
+            content_match = re.search(r'<div class="_3-95 _a6-p"><div>(?:<div></div>)?<div>([^<]*)</div>', block_content)
+            if content_match:
+                msg_content = content_match.group(1).strip()
+            else:
+                # Try alternate pattern - sometimes content is in different structure
+                content_match = re.search(r'<div class="_3-95 _a6-p">(.*?)</div>\s*</div>', block_content, re.DOTALL)
+                if content_match:
+                    # Strip HTML tags to get plain text
+                    inner = content_match.group(1)
+                    msg_content = re.sub(r'<[^>]+>', ' ', inner).strip()
+                    msg_content = ' '.join(msg_content.split())  # Normalize whitespace
+                else:
+                    msg_content = ""
+            
+            # Skip empty messages or "sent an attachment" placeholders
+            if not msg_content or msg_content.lower().endswith('sent an attachment.'):
+                continue
+            
+            # Parse timestamp: "Jan 08, 2026 4:41 am"
+            try:
+                dt = datetime.strptime(timestamp_str, "%b %d, %Y %I:%M %p")
+            except ValueError:
+                try:
+                    # Try alternate format without leading zero
+                    dt = datetime.strptime(timestamp_str, "%b %d, %Y %I:%M%p")
+                except ValueError:
+                    try:
+                        # Try with lowercase am/pm
+                        dt = datetime.strptime(timestamp_str.lower(), "%b %d, %Y %I:%M %p")
+                    except:
+                        dt = datetime.now()
+            
+            messages.append((dt, sender, msg_content))
+        
+        # Instagram HTML displays newest first, reverse to get chronological order
+        messages.reverse()
+        
+    except Exception as e:
+        print(f"Error parsing Instagram HTML file {file_path}: {e}")
     
     return messages
 
@@ -295,6 +393,8 @@ def generate_style_file(file_results, output_path, max_lines_per_file=5000):
     for filename, filepath, filetype, subject in file_results:
         if filetype == 'Instagram':
             messages = parse_instagram_messages(filepath)
+        elif filetype == 'InstagramHTML':
+            messages = parse_instagram_html_messages(filepath)
         elif filetype == 'WhatsApp':
             messages = parse_whatsapp_messages(filepath)
         elif filetype == 'LINE':
@@ -386,6 +486,8 @@ def generate_context_file(file_results, output_path):
         # Parse messages based on file type
         if filetype == 'Instagram':
             messages = parse_instagram_messages(filepath)
+        elif filetype == 'InstagramHTML':
+            messages = parse_instagram_html_messages(filepath)
         elif filetype == 'WhatsApp':
             messages = parse_whatsapp_messages(filepath)
         elif filetype == 'LINE':
@@ -452,6 +554,8 @@ def generate_context_chunks(file_results, output_path, gap_hours=2):
         # Parse messages based on file type
         if filetype == 'Instagram':
             messages = parse_instagram_messages(filepath)
+        elif filetype == 'InstagramHTML':
+            messages = parse_instagram_html_messages(filepath)
         elif filetype == 'WhatsApp':
             messages = parse_whatsapp_messages(filepath)
         elif filetype == 'LINE':
