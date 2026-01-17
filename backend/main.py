@@ -575,6 +575,58 @@ async def update_settings(settings: SettingsUpdate):
     return {"success": True, "settings": settings_db}
 
 
+@app.get("/api/settings/wavespeed-key")
+async def get_wavespeed_key_status():
+    """Check if WaveSpeed API key is configured (doesn't return the actual key)."""
+    has_key = bool(settings_db.get("wavespeed_api_key"))
+    return {
+        "configured": has_key,
+        "message": "API key is configured" if has_key else "No API key set"
+    }
+
+
+@app.post("/api/settings/wavespeed-key")
+async def set_wavespeed_key(data: dict):
+    """Save WaveSpeed API key."""
+    api_key = data.get("api_key", "").strip()
+    
+    if not api_key:
+        raise HTTPException(status_code=400, detail="API key is required")
+    
+    if len(api_key) < 20:
+        raise HTTPException(status_code=400, detail="Invalid API key format")
+    
+    settings_db["wavespeed_api_key"] = api_key
+    save_settings()
+    
+    return {"success": True, "message": "API key saved successfully"}
+
+
+@app.delete("/api/settings/wavespeed-key")
+async def delete_wavespeed_key():
+    """Delete the stored WaveSpeed API key."""
+    if settings_db.get("wavespeed_api_key"):
+        settings_db["wavespeed_api_key"] = ""
+        save_settings()
+        return {"success": True, "message": "API key removed"}
+    raise HTTPException(status_code=404, detail="No API key to remove")
+
+
+@app.post("/api/settings/wavespeed-key/test")
+async def test_wavespeed_key():
+    """Test if the saved WaveSpeed API key is valid."""
+    api_key = settings_db.get("wavespeed_api_key")
+    if not api_key:
+        raise HTTPException(status_code=400, detail="No API key configured")
+    
+    try:
+        ws = WaveSpeedManager(api_key=api_key)
+        voices = ws.list_voices()
+        return {"success": True, "message": "API key is valid!", "voices": voices}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"API key test failed: {str(e)}")
+
+
 # --- Voice Management ---
 @app.get("/api/voices")
 async def list_voices():
@@ -696,7 +748,7 @@ async def get_voice_status(session_id: str):
 
 if __name__ == "__main__":
     import uvicorn
-    print("Starting NullTale Backend on http://localhost:8000")
+    print("Starting NullTale Backend on http://localhost:5000")
     print("Gemini Model: gemini-2.5-flash-lite")
     print("Voice: WaveSpeed Cloud TTS")
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    uvicorn.run(app, host="0.0.0.0", port=5000)

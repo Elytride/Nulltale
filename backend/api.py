@@ -1165,6 +1165,36 @@ def list_subjects():
 
 # --- Settings Endpoints ---
 
+# In-memory settings (could be persisted to file if needed)
+_app_settings = {
+    "model_version": "v2.4",
+    "temperature": 0.7,
+    "api_key": "sk-........................"
+}
+
+@app.route("/api/settings", methods=["GET"])
+def get_settings():
+    """Get app settings."""
+    return jsonify(_app_settings)
+
+
+@app.route("/api/settings", methods=["PUT"])
+def update_settings():
+    """Update app settings."""
+    global _app_settings
+    data = request.get_json()
+    
+    # Update only allowed fields
+    if "model_version" in data:
+        _app_settings["model_version"] = data["model_version"]
+    if "temperature" in data:
+        _app_settings["temperature"] = data["temperature"]
+    if "api_key" in data:
+        _app_settings["api_key"] = data["api_key"]
+    
+    return jsonify({"success": True, "settings": _app_settings})
+
+
 @app.route("/api/settings/wavespeed-key", methods=["GET"])
 def get_wavespeed_key_status():
     """
