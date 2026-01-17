@@ -290,3 +290,43 @@ export async function getVoiceStatus(sessionId) {
     if (!response.ok) throw new Error('Failed to get voice status');
     return response.json();
 }
+
+// --- WaveSpeed API Key Management ---
+export async function getWaveSpeedKeyStatus() {
+    const response = await fetch(`${API_BASE}/settings/wavespeed-key`);
+    if (!response.ok) throw new Error('Failed to check WaveSpeed key status');
+    return response.json();
+}
+
+export async function saveWaveSpeedKey(apiKey) {
+    const response = await fetch(`${API_BASE}/settings/wavespeed-key`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ api_key: apiKey }),
+    });
+    if (!response.ok) {
+        const error = await response.json().catch(() => ({}));
+        throw new Error(error.error || 'Failed to save API key');
+    }
+    return response.json();
+}
+
+export async function deleteWaveSpeedKey() {
+    const response = await fetch(`${API_BASE}/settings/wavespeed-key`, {
+        method: 'DELETE',
+    });
+    if (!response.ok) throw new Error('Failed to delete API key');
+    return response.json();
+}
+
+export async function testWaveSpeedKey() {
+    const response = await fetch(`${API_BASE}/settings/wavespeed-key/test`, {
+        method: 'POST',
+    });
+    const data = await response.json();
+    if (!data.success) {
+        throw new Error(data.error || 'API key test failed');
+    }
+    return data;
+}
+

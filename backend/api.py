@@ -30,6 +30,12 @@ from discord_zip_processor import (
     cleanup_zip as discord_cleanup_zip
 )
 
+# Voice/TTS imports
+from wavespeed_manager import WaveSpeedManager
+from secrets_manager import (
+    get_wavespeed_key, save_wavespeed_key, has_wavespeed_key
+)
+
 app = Flask(__name__)
 
 # CORS for Vite dev server
@@ -1155,6 +1161,255 @@ def list_subjects():
     return jsonify({
         "subjects": get_available_subjects()
     })
+
+
+# --- Settings Endpoints ---
+
+@app.route("/api/settings/wavespeed-key", methods=["GET"])
+def get_wavespeed_key_status():
+    """
+    Check if WaveSpeed API key is configured.
+    Does NOT return the actual key for security.
+    """
+    has_key = has_wavespeed_key()
+    return jsonify({
+        "configured": has_key,
+        "message": "API key is configured" if has_key else "No API key set"
+    })
+
+
+@app.route("/api/settings/wavespeed-key", methods=["POST"])
+def set_wavespeed_key():
+    """
+    Save WaveSpeed API key securely.
+    Request body: { "api_key": "your-api-key" }
+    """
+    data = request.get_json()
+    api_key = data.get("api_key", "").strip()
+    
+    if not api_key:
+        return jsonify({"error": "API key is required"}), 400
+    
+    # Basic validation - WaveSpeed keys typically start with certain prefixes
+    if len(api_key) < 20:
+        return jsonify({"error": "Invalid API key format"}), 400
+    
+    # Save securely
+    if save_wavespeed_key(api_key):
+        # Force reload manager with new key on next use
+        global _wavespeed_manager
+        _wavespeed_manager = None
+        
+        return jsonify({
+            "success": True,
+            "message": "API key saved successfully"
+        })
+    else:
+        return jsonify({"error": "Failed to save API key"}), 500
+
+
+@app.route("/api/settings/wavespeed-key", methods=["DELETE"])
+def delete_wavespeed_key_endpoint():
+    """Delete the stored WaveSpeed API key."""
+    from secrets_manager import delete_secret
+    
+    if delete_secret("wavespeed_api_key"):
+        global _wavespeed_manager
+        _wavespeed_manager = None
+        
+        return jsonify({
+            "success": True,
+            "message": "API key removed"
+        })
+    else:
+        return jsonify({"error": "No API key to remove"}), 404
+
+
+@app.route("/api/settings/wavespeed-key/test", methods=["POST"])
+def test_wavespeed_key():
+    """
+    Test if the saved WaveSpeed API key is valid.
+    Makes a simple API call to verify the key works.
+    """
+    try:
+        manager = get_wavespeed_manager(force_reload=True)
+        voices = manager.list_voices()
+        return jsonify({
+            "success": True,
+            "message": "API key is valid!",
+            "voices": voices
+        })
+    except ValueError as e:
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 400
+    except Exception as e:
+        return jsonify({
+            "success": False,
+            "error": f"API key test failed: {str(e)}"
+        }), 400
+
+
+# --- Voice / TTS Endpoints ---
+
+# Lazy-loaded WaveSpeed manager instance (created on first use)
+_wavespeed_manager = None
+
+def get_wavespeed_manager(force_reload: bool = False):
+    """
+    Get or create the WaveSpeed manager instance.
+    Uses secrets_manager for secure key storage, falls back to env var.
+    
+    Args:
+        force_reload: If True, recreate the manager with current key
+    """
+    global _wavespeed_manager
+    
+    if _wavespeed_manager is None or force_reload:
+        # Try secure storage first, then env var
+        api_key = get_wavespeed_key()
+        
+        if not api_key:
+            raise ValueError(
+                "WaveSpeed API key not configured. "
+                "Please set it in Settings > Voice."
+            )
+        
+        _wavespeed_manager = WaveSpeedManager(api_key=api_key)
+    
+    return _wavespeed_manager
+
+
+@app.route("/api/voice/clone", methods=["POST"])
+def clone_voice():
+    """
+    Clone a voice from an uploaded audio file.
+    Request body: { "voice_name": "my_voice" }
+    Expects audio file in 'file' field.
+    """
+    if "file" not in request.files:
+        return jsonify({"error": "No audio file provided"}), 400
+    
+    audio_file = request.files["file"]
+    voice_name = request.form.get("voice_name", "cloned_voice")
+    
+    if audio_file.filename == "":
+        return jsonify({"error": "No file selected"}), 400
+    
+    # Save audio file temporarily
+    file_id = uuid.uuid4().hex[:12]
+    ext = Path(audio_file.filename).suffix.lower() or ".wav"
+    temp_path = UPLOAD_DIR / "voice" / f"{file_id}_clone{ext}"
+    audio_file.save(str(temp_path))
+    
+    try:
+        manager = get_wavespeed_manager()
+        voice_id = manager.clone_voice(voice_name, str(temp_path))
+        
+        return jsonify({
+            "success": True,
+            "voice_id": voice_id,
+            "voice_name": voice_name,
+            "message": f"Voice '{voice_name}' cloned successfully!"
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    finally:
+        # Cleanup temp file
+        if temp_path.exists():
+            temp_path.unlink()
+
+
+@app.route("/api/voice/speak", methods=["POST"])
+def speak():
+    """
+    Generate speech from text using WaveSpeed TTS.
+    Request body: { "text": "Hello world", "voice": "voice_id" }
+    Returns WAV audio file.
+    """
+    data = request.get_json()
+    text = data.get("text", "")
+    voice = data.get("voice", "Deep_Voice_Man")
+    
+    if not text:
+        return jsonify({"error": "Text is required"}), 400
+    
+    try:
+        manager = get_wavespeed_manager()
+        audio_buffer = manager.speak(text, voice)
+        
+        from flask import send_file
+        return send_file(
+            audio_buffer,
+            mimetype="audio/wav",
+            as_attachment=False,
+            download_name="speech.wav"
+        )
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/voice/speak/stream", methods=["POST"])
+def speak_stream():
+    """
+    Generate speech from text with streaming (SSE).
+    Request body: { "text": "Hello world", "voice": "voice_id" }
+    Returns SSE stream with audio chunks.
+    """
+    from flask import Response
+    import base64
+    
+    data = request.get_json()
+    text = data.get("text", "")
+    voice = data.get("voice", "Deep_Voice_Man")
+    
+    if not text:
+        return jsonify({"error": "Text is required"}), 400
+    
+    def generate():
+        try:
+            manager = get_wavespeed_manager()
+            
+            for chunk in manager.speak_stream(text, voice):
+                # Base64 encode WAV chunk for SSE transport
+                chunk_b64 = base64.b64encode(chunk).decode('utf-8')
+                yield f"data: {json.dumps({'audio': chunk_b64})}\n\n"
+            
+            yield f"data: {json.dumps({'done': True})}\n\n"
+        except Exception as e:
+            yield f"data: {json.dumps({'error': str(e)})}\n\n"
+    
+    return Response(
+        generate(),
+        mimetype="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no"
+        }
+    )
+
+
+@app.route("/api/voice/list", methods=["GET"])
+def list_voices():
+    """List available voices (system + cloned)."""
+    try:
+        manager = get_wavespeed_manager()
+        voices = manager.list_voices()
+        return jsonify(voices)
+    except Exception as e:
+        # Return default system voices even if manager fails
+        return jsonify({
+            "system": [
+                "Wise_Woman",
+                "Friendly_Person",
+                "Deep_Voice_Man",
+                "Calm_Woman",
+                "Inspirational_girl"
+            ],
+            "cloned": [],
+            "error": str(e)
+        })
 
 
 if __name__ == "__main__":

@@ -35,3 +35,6 @@ backend/Voice Testing/ffmpeg.exe
 backend/Voice Testing/ffprobe.exe
 
 test_prediction.py
+
+# Encrypted API keys (never commit)
+backend/.secrets/
