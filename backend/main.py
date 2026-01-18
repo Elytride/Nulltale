@@ -21,9 +21,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 import google.generativeai as genai
 
-# Add Voice Testing to path for WaveSpeedManager import
-VOICE_TESTING_PATH = Path(__file__).parent / "Voice Testing"
-sys.path.insert(0, str(VOICE_TESTING_PATH))
+# Import WaveSpeedManager from local module
 from wavespeed_manager import WaveSpeedManager
 
 app = FastAPI(title="NullTale API", version="1.0.0")
