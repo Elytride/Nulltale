@@ -435,9 +435,23 @@ async def stream_voice_call(message: CallMessage):
 
 
 @app.get("/api/messages/{session_id}")
-async def get_messages(session_id: str):
-    """Get all messages for a session."""
-    return {"messages": messages_db.get(session_id, [])}
+async def get_messages(session_id: str, include_voice: bool = False):
+    """
+    Get messages for a session.
+    By default, filters out voice messages (for text chat display).
+    Voice messages are still used for AI context internally.
+    
+    Args:
+        include_voice: If True, include voice messages. Default False (text chat only).
+    """
+    all_messages = messages_db.get(session_id, [])
+    
+    if include_voice:
+        return {"messages": all_messages}
+    
+    # Filter out voice messages for text chat display
+    text_messages = [msg for msg in all_messages if msg.get("source") != "voice"]
+    return {"messages": text_messages}
 
 
 # --- Session Endpoints ---
