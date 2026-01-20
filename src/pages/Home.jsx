@@ -1,30 +1,90 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { ChatInterface } from "@/components/layout/ChatInterface";
-import { FilesModal } from "@/components/modals/FilesModal";
+import { ManageChatModal } from "@/components/modals/ManageChatModal";
+import { CreateChatModal } from "@/components/modals/CreateChatModal";
 import { SettingsModal } from "@/components/modals/SettingsModal";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
-import { Menu, Cpu, MessageSquare, Database, Sparkles } from "lucide-react";
+import { Menu, Cpu, MessageSquare, Database, Sparkles, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { getSessions, deleteSession } from "@/lib/api";
 
 export default function Home() {
-    const [filesOpen, setFilesOpen] = useState(false);
+    const [sessions, setSessions] = useState([]);
+    const [createChatOpen, setCreateChatOpen] = useState(false);
+    const [manageChatOpen, setManageChatOpen] = useState(false);
+    const [manageSession, setManageSession] = useState(null); // Session being managed
     const [settingsOpen, setSettingsOpen] = useState(false);
     const [sidebarOpen, setSidebarOpen] = useState(false);
     const [currentSession, setCurrentSession] = useState(null);
+    const [isLoading, setIsLoading] = useState(true);
 
-    const handleOpenFiles = () => {
-        setFilesOpen(true);
+    // Fetch sessions on mount
+    useEffect(() => {
+        fetchSessions();
+    }, []);
+
+    async function fetchSessions() {
+        try {
+            const data = await getSessions();
+            const loadedSessions = data.sessions || [];
+            setSessions(loadedSessions);
+
+            // Auto-select first session if none selected and sessions exist
+            if (loadedSessions.length > 0 && !currentSession) {
+                setCurrentSession(loadedSessions[0]);
+            }
+        } catch (error) {
+            console.error("Failed to fetch sessions:", error);
+            setSessions([]);
+        } finally {
+            setIsLoading(false);
+        }
+    }
+
+    const handleSessionChange = (session) => {
+        setCurrentSession(session);
         setSidebarOpen(false);
+    };
+
+    const handleNewChat = () => {
+        setCreateChatOpen(true);
+        setSidebarOpen(false);
+    };
+
+    const handleSessionCreated = (newSession) => {
+        setSessions(prev => [newSession, ...prev]); // Add to top
+        setCurrentSession(newSession);
+        // Open management modal for the new session immediately
+        setManageSession(newSession);
+        setManageChatOpen(true);
+    };
+
+    const handleManageSession = (session) => {
+        setManageSession(session);
+        setManageChatOpen(true);
+        setSidebarOpen(false);
+    };
+
+    const handleDeleteSession = async (sessionId) => {
+        // e.stopPropagation() is handled in Sidebar
+
+        try {
+            await deleteSession(sessionId);
+            setSessions(prev => prev.filter(s => s.id !== sessionId));
+
+            if (currentSession?.id === sessionId) {
+                const remaining = sessions.filter(s => s.id !== sessionId);
+                setCurrentSession(remaining.length > 0 ? remaining[0] : null);
+            }
+        } catch (error) {
+            console.error("Failed to delete session:", error);
+            // Ideally trigger a toast here
+        }
     };
 
     const handleOpenSettings = () => {
         setSettingsOpen(true);
-        setSidebarOpen(false);
-    };
-
-    const handleSessionChange = (session) => {
-        setCurrentSession(session);
         setSidebarOpen(false);
     };
 
@@ -33,9 +93,13 @@ export default function Home() {
             {/* Desktop Sidebar */}
             <div className="hidden lg:flex">
                 <Sidebar
-                    onOpenFiles={handleOpenFiles}
-                    onOpenSettings={handleOpenSettings}
+                    sessions={sessions}
+                    currentSession={currentSession}
                     onSessionChange={handleSessionChange}
+                    onNewChat={handleNewChat}
+                    onManageSession={handleManageSession}
+                    onDeleteSession={handleDeleteSession}
+                    onOpenSettings={handleOpenSettings}
                 />
             </div>
 
@@ -43,9 +107,13 @@ export default function Home() {
             <Sheet open={sidebarOpen} onOpenChange={setSidebarOpen}>
                 <SheetContent side="left" className="w-80 p-0 border-white/5 bg-sidebar">
                     <Sidebar
-                        onOpenFiles={handleOpenFiles}
-                        onOpenSettings={handleOpenSettings}
+                        sessions={sessions}
+                        currentSession={currentSession}
                         onSessionChange={handleSessionChange}
+                        onNewChat={handleNewChat}
+                        onManageSession={handleManageSession}
+                        onDeleteSession={handleDeleteSession}
+                        onOpenSettings={handleOpenSettings}
                     />
                 </SheetContent>
             </Sheet>
@@ -69,7 +137,7 @@ export default function Home() {
                         sessionName={currentSession.name}
                     />
                 ) : (
-                    /* Nulltale Home Screen */
+                    /* Nulltale Home Screen (Empty State) */
                     <div className="flex-1 flex flex-col items-center justify-center p-8 relative overflow-hidden">
                         {/* Background Effects */}
                         <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_50%,rgba(120,58,237,0.15),transparent_50%)] pointer-events-none" />
@@ -95,31 +163,50 @@ export default function Home() {
                         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 max-w-2xl w-full mb-8">
                             <div className="p-4 rounded-xl bg-white/5 border border-white/10 text-center">
                                 <Database size={24} className="text-primary mx-auto mb-2" />
-                                <h3 className="text-sm font-medium text-white mb-1">1. Upload Data</h3>
-                                <p className="text-xs text-muted-foreground">Chat logs from WhatsApp or Instagram</p>
+                                <h3 className="text-sm font-medium text-white mb-1">1. Create Chat</h3>
+                                <p className="text-xs text-muted-foreground">Name your new persona</p>
                             </div>
                             <div className="p-4 rounded-xl bg-white/5 border border-white/10 text-center">
                                 <Sparkles size={24} className="text-primary mx-auto mb-2" />
                                 <h3 className="text-sm font-medium text-white mb-1">2. Train AI</h3>
-                                <p className="text-xs text-muted-foreground">Click Refresh AI Memory</p>
+                                <p className="text-xs text-muted-foreground">Upload logs & Refresh Memory</p>
                             </div>
                             <div className="p-4 rounded-xl bg-white/5 border border-white/10 text-center">
                                 <MessageSquare size={24} className="text-primary mx-auto mb-2" />
                                 <h3 className="text-sm font-medium text-white mb-1">3. Start Chatting</h3>
-                                <p className="text-xs text-muted-foreground">Create a new chat to begin</p>
+                                <p className="text-xs text-muted-foreground">Talk via text or voice</p>
                             </div>
                         </div>
 
                         {/* CTA */}
-                        <p className="text-xs text-muted-foreground/60 font-mono">
-                            SELECT A CHAT OR CREATE NEW TO BEGIN
-                        </p>
+                        <Button
+                            size="lg"
+                            className="bg-primary hover:bg-primary/90 text-white px-8"
+                            onClick={handleNewChat}
+                        >
+                            <Plus className="mr-2 h-5 w-5" />
+                            Create New Chat
+                        </Button>
                     </div>
                 )}
             </main>
 
-            <FilesModal open={filesOpen} onOpenChange={setFilesOpen} currentSession={currentSession} />
-            <SettingsModal open={settingsOpen} onOpenChange={setSettingsOpen} />
+            <CreateChatModal
+                open={createChatOpen}
+                onOpenChange={setCreateChatOpen}
+                onSessionCreated={handleSessionCreated}
+            />
+
+            <ManageChatModal
+                open={manageChatOpen}
+                onOpenChange={setManageChatOpen}
+                currentSession={manageSession || currentSession}
+            />
+
+            <SettingsModal
+                open={settingsOpen}
+                onOpenChange={setSettingsOpen}
+            />
         </div>
     );
 }

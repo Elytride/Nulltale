@@ -151,6 +151,61 @@ Respond as {self.subject}:"""
             
         except Exception as e:
             return f"Error generating response: {e}"
+
+    def stream_chat(self, user_message, top_k_context=5):
+        """
+        Stream a response from the chatbot.
+        
+        Args:
+            user_message: The user's message
+            top_k_context: Number of context chunks to retrieve
+            
+        Yields:
+            Chunks of the response text
+        """
+        try:
+            # Retrieve relevant context
+            retrieved = self.retriever.retrieve(user_message, top_k=top_k_context)
+            context_text = self.retriever.format_context(retrieved, include_exchange=True)
+            
+            # Build the full prompt
+            system_prompt = self._build_system_prompt(context_text)
+            history_text = self._format_history()
+            
+            full_prompt = f"""{system_prompt}
+
+## CONVERSATION HISTORY
+{history_text}
+
+## CURRENT MESSAGE
+User: {user_message}
+
+Respond as {self.subject}:"""
+            
+            # Stream generation
+            response = self.model.generate_content(full_prompt, stream=True)
+            
+            full_response = ""
+            for chunk in response:
+                if chunk.text:
+                    full_response += chunk.text
+                    yield chunk.text
+            
+            # Update history after full generation
+            if full_response.startswith(f"{self.subject}:"):
+                full_response = full_response[len(f"{self.subject}:"):].strip()
+            
+            self.conversation_history.append({
+                'user': user_message,
+                'assistant': full_response
+            })
+            
+            if len(self.conversation_history) > self.max_history:
+                self.conversation_history = self.conversation_history[-self.max_history:]
+                
+        except Exception as e:
+            yield f"Error: {e}"
+
     
     def reset_history(self):
         """Clear the conversation history."""

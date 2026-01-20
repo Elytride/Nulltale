@@ -6,7 +6,7 @@
 const API_BASE = '/api';
 
 // --- Chat ---
-export async function sendMessage(content, sessionId = '1') {
+export async function sendMessage(content, sessionId) {
     const response = await fetch(`${API_BASE}/chat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -19,6 +19,14 @@ export async function sendMessage(content, sessionId = '1') {
 export async function getMessages(sessionId) {
     const response = await fetch(`${API_BASE}/messages/${sessionId}`);
     if (!response.ok) throw new Error('Failed to fetch messages');
+    return response.json();
+}
+
+export async function clearChatHistory(sessionId) {
+    const response = await fetch(`${API_BASE}/messages/${sessionId}`, {
+        method: 'DELETE',
+    });
+    if (!response.ok) throw new Error('Failed to clear chat history');
     return response.json();
 }
 
@@ -47,8 +55,8 @@ export async function deleteSession(sessionId) {
     return response.json();
 }
 
-// --- Files ---
-export async function uploadFile(files, fileType) {
+// --- Files (Per Chat) ---
+export async function uploadFile(sessionId, files, fileType) {
     const formData = new FormData();
 
     // Support both single file and FileList
@@ -60,7 +68,7 @@ export async function uploadFile(files, fileType) {
         formData.append('file', files);
     }
 
-    const response = await fetch(`${API_BASE}/files/${fileType}`, {
+    const response = await fetch(`${API_BASE}/chats/${sessionId}/files/${fileType}`, {
         method: 'POST',
         body: formData,
     });
@@ -68,20 +76,14 @@ export async function uploadFile(files, fileType) {
     return response.json();
 }
 
-export async function listFiles(fileType) {
-    const response = await fetch(`${API_BASE}/files/${fileType}`);
+export async function listFiles(sessionId, fileType) {
+    const response = await fetch(`${API_BASE}/chats/${sessionId}/files/${fileType}`);
     if (!response.ok) throw new Error('Failed to list files');
     return response.json();
 }
 
-export async function getParticipants(fileType, fileId) {
-    const response = await fetch(`${API_BASE}/files/${fileType}/${fileId}/participants`);
-    if (!response.ok) throw new Error('Failed to get participants');
-    return response.json();
-}
-
-export async function setSubject(fileType, fileId, subject) {
-    const response = await fetch(`${API_BASE}/files/${fileType}/${fileId}/subject`, {
+export async function setSubject(sessionId, fileId, subject) {
+    const response = await fetch(`${API_BASE}/chats/${sessionId}/files/text/${fileId}/subject`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ subject }),
@@ -90,8 +92,8 @@ export async function setSubject(fileType, fileId, subject) {
     return response.json();
 }
 
-export async function deleteUploadedFile(fileType, fileId) {
-    const response = await fetch(`${API_BASE}/files/${fileType}/${fileId}`, {
+export async function deleteUploadedFile(sessionId, fileType, fileId) {
+    const response = await fetch(`${API_BASE}/chats/${sessionId}/files/${fileType}/${fileId}`, {
         method: 'DELETE',
     });
     if (!response.ok) throw new Error('Failed to delete file');
@@ -100,7 +102,8 @@ export async function deleteUploadedFile(fileType, fileId) {
 
 // --- ZIP Handling ---
 export async function selectZipConversations(zipId, conversations) {
-    const response = await fetch(`${API_BASE}/files/text/zip/select`, {
+    // Session ID is inferred from the zipId (stored in backend pending_zips)
+    const response = await fetch(`${API_BASE}/chats/zip/select`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ zip_id: zipId, conversations }),
@@ -110,15 +113,16 @@ export async function selectZipConversations(zipId, conversations) {
 }
 
 // --- AI Refresh ---
-export async function checkRefreshReady() {
-    const response = await fetch(`${API_BASE}/refresh/ready`);
+export async function checkRefreshReady(sessionId) {
+    if (!sessionId) return { ready: false, reason: 'No session selected' };
+    const response = await fetch(`${API_BASE}/chats/${sessionId}/refresh/ready`);
     if (!response.ok) throw new Error('Failed to check refresh status');
     return response.json();
 }
 
 export async function refreshAIMemory({ sessionId, onProgress, onComplete, onError }) {
     try {
-        const response = await fetch(`${API_BASE}/refresh`, {
+        const response = await fetch(`${API_BASE}/chats/${sessionId}/refresh`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ session_id: sessionId }),
@@ -184,16 +188,6 @@ export async function updateSettings(settings) {
 }
 
 // --- Voice Call Streaming ---
-/**
- * Stream a voice call response with both text and audio chunks.
- * @param {string} content - The user's message
- * @param {string} sessionId - The session ID
- * @param {function} onText - Callback for text chunks
- * @param {function} onAudio - Callback for audio chunks (base64)
- * @param {function} onStatus - Callback for status updates
- * @param {function} onDone - Callback when complete
- * @param {function} onError - Callback for errors
- */
 export async function streamVoiceCall(content, sessionId, { onText, onAudio, onStatus, onDone, onError }) {
     try {
         const response = await fetch(`${API_BASE}/call/stream`, {
@@ -216,14 +210,12 @@ export async function streamVoiceCall(content, sessionId, { onText, onAudio, onS
 
             buffer += decoder.decode(value, { stream: true });
 
-            // Process complete SSE messages
             const lines = buffer.split('\n');
-            buffer = lines.pop() || ''; // Keep incomplete line in buffer
+            buffer = lines.pop() || '';
 
             for (const line of lines) {
                 if (line.startsWith('data: ')) {
                     try {
-                        // Parse the JSON data
                         const dataStr = line.slice(6).trim();
                         const data = JSON.parse(dataStr);
 
@@ -329,4 +321,3 @@ export async function testWaveSpeedKey() {
     }
     return data;
 }
-

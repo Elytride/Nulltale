@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
@@ -24,7 +24,6 @@ import {
     CollapsibleTrigger,
 } from "@/components/ui/collapsible";
 import { cn } from "@/lib/utils";
-import { getSessions, createSession, deleteSession } from "@/lib/api";
 
 const FAQ_ITEMS = [
     {
@@ -49,73 +48,21 @@ const FAQ_ITEMS = [
     }
 ];
 
-export function Sidebar({ onOpenFiles, onOpenSettings, onSessionChange }) {
-    const [sessions, setSessions] = useState([]);
-    const [activeSession, setActiveSession] = useState(null);
+export function Sidebar({
+    sessions,
+    currentSession,
+    onSessionChange,
+    onNewChat,
+    onManageSession,
+    onDeleteSession,
+    onOpenSettings
+}) {
     const [faqOpen, setFaqOpen] = useState(false);
-    const [isLoading, setIsLoading] = useState(true);
 
-    // Fetch sessions on mount
-    useEffect(() => {
-        async function fetchSessions() {
-            try {
-                const data = await getSessions();
-                setSessions(data.sessions || []);
-                if (data.sessions?.length > 0 && !activeSession) {
-                    setActiveSession(data.sessions[0].id);
-                    onSessionChange?.(data.sessions[0]);
-                }
-            } catch (error) {
-                console.error("Failed to fetch sessions:", error);
-                // No fallback - start with empty
-                setSessions([]);
-            } finally {
-                setIsLoading(false);
-            }
-        }
-        fetchSessions();
-    }, []);
-
-    const handleNewNull = async () => {
-        const name = prompt("Enter a name for the new chat:");
-        if (!name) return;
-
-        try {
-            const newSession = await createSession(name);
-            setSessions(prev => [...prev, newSession]);
-            setActiveSession(newSession.id);
-            onSessionChange?.(newSession);
-        } catch (error) {
-            console.error("Failed to create session:", error);
-            alert("Failed to create new chat. Please try again.");
-        }
-    };
-
-    const handleDeleteSession = async (sessionId, e) => {
-        e.stopPropagation();
-
-        if (!confirm("Are you sure you want to delete this session?")) return;
-
-        try {
-            await deleteSession(sessionId);
-            setSessions(prev => prev.filter(s => s.id !== sessionId));
-
-            // If deleted active session, switch to first available
-            if (activeSession === sessionId && sessions.length > 1) {
-                const remaining = sessions.filter(s => s.id !== sessionId);
-                if (remaining.length > 0) {
-                    setActiveSession(remaining[0].id);
-                    onSessionChange?.(remaining[0]);
-                }
-            }
-        } catch (error) {
-            console.error("Failed to delete session:", error);
-            alert("Failed to delete session. Please try again.");
-        }
-    };
+    // activeSession is now derived from currentSession prop
+    const activeSessionId = currentSession?.id;
 
     const handleSessionClick = (session) => {
-        setActiveSession(session.id);
         onSessionChange?.(session);
     };
 
@@ -132,7 +79,7 @@ export function Sidebar({ onOpenFiles, onOpenSettings, onSessionChange }) {
                 <Button
                     className="w-full justify-start gap-2 bg-white/5 hover:bg-white/10 text-white border-white/5 mb-6"
                     variant="outline"
-                    onClick={handleNewNull}
+                    onClick={onNewChat}
                 >
                     <Plus size={16} />
                     New Chat
@@ -145,7 +92,7 @@ export function Sidebar({ onOpenFiles, onOpenSettings, onSessionChange }) {
 
             <ScrollArea className="flex-1 px-4">
                 <div className="space-y-2">
-                    {isLoading ? (
+                    {!sessions ? (
                         <div className="text-muted-foreground text-sm text-center py-4">Loading...</div>
                     ) : (
                         sessions.map((session) => (
@@ -153,7 +100,7 @@ export function Sidebar({ onOpenFiles, onOpenSettings, onSessionChange }) {
                                 key={session.id}
                                 className={cn(
                                     "group flex items-center justify-between p-3 rounded-xl transition-all duration-200 cursor-pointer border",
-                                    activeSession === session.id
+                                    activeSessionId === session.id
                                         ? "bg-primary/10 border-primary/20"
                                         : "hover:bg-white/5 border-transparent hover:border-white/5"
                                 )}
@@ -162,13 +109,13 @@ export function Sidebar({ onOpenFiles, onOpenSettings, onSessionChange }) {
                                 <div className="flex items-center gap-3 overflow-hidden">
                                     <div className={cn(
                                         "w-2 h-2 rounded-full",
-                                        activeSession === session.id ? "bg-primary shadow-[0_0_8px_rgba(124,58,237,0.5)]" : "bg-muted-foreground/30"
+                                        activeSessionId === session.id ? "bg-primary shadow-[0_0_8px_rgba(124,58,237,0.5)]" : "bg-muted-foreground/30"
                                     )} />
                                     <div className="flex flex-col overflow-hidden">
                                         <div className="flex items-center gap-1.5">
                                             <span className={cn(
                                                 "text-sm font-medium truncate",
-                                                activeSession === session.id ? "text-white" : "text-muted-foreground group-hover:text-white"
+                                                activeSessionId === session.id ? "text-white" : "text-muted-foreground group-hover:text-white"
                                             )}>
                                                 {session.name}
                                             </span>
@@ -193,8 +140,21 @@ export function Sidebar({ onOpenFiles, onOpenSettings, onSessionChange }) {
                                     </DropdownMenuTrigger>
                                     <DropdownMenuContent align="end" className="w-40 bg-sidebar border-white/10">
                                         <DropdownMenuItem
+                                            className="cursor-pointer"
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                onManageSession(session);
+                                            }}
+                                        >
+                                            <Database size={14} className="mr-2" />
+                                            Manage
+                                        </DropdownMenuItem>
+                                        <DropdownMenuItem
                                             className="text-destructive focus:text-destructive focus:bg-destructive/10 cursor-pointer"
-                                            onClick={(e) => handleDeleteSession(session.id, e)}
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                onDeleteSession(session.id);
+                                            }}
                                         >
                                             <Trash2 size={14} className="mr-2" />
                                             Delete
@@ -239,14 +199,6 @@ export function Sidebar({ onOpenFiles, onOpenSettings, onSessionChange }) {
             </ScrollArea>
 
             <div className="p-4 border-t border-white/5 space-y-2">
-                <Button
-                    variant="ghost"
-                    className="w-full justify-start gap-3 text-muted-foreground hover:text-white hover:bg-white/5"
-                    onClick={onOpenFiles}
-                >
-                    <Database size={18} />
-                    Knowledge Base
-                </Button>
                 <Button
                     variant="ghost"
                     className="w-full justify-start gap-3 text-muted-foreground hover:text-white hover:bg-white/5"

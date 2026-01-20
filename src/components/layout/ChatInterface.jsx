@@ -2,10 +2,10 @@ import { useState, useEffect, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Send, Paperclip, Mic, User, Phone, PhoneOff, Volume2, Eye } from "lucide-react";
+import { Send, Paperclip, Mic, User, Phone, PhoneOff, Volume2, Eye, Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { motion, AnimatePresence } from "framer-motion";
-import { sendMessage, getMessages, streamVoiceCall, warmupModels } from "@/lib/api";
+import { sendMessage, getMessages, streamVoiceCall, warmupModels, clearChatHistory } from "@/lib/api";
 
 export function ChatInterface({ sessionId = "1", sessionName = "Alan Turing" }) {
     const [messages, setMessages] = useState([]);
@@ -36,7 +36,20 @@ export function ChatInterface({ sessionId = "1", sessionName = "Alan Turing" }) 
         fetchMessages();
     }, [sessionId, sessionName]);
 
+    const handleClearChat = async () => {
+        if (!confirm("Are you sure you want to clear the current chat history? This cannot be undone.")) return;
+
+        try {
+            await clearChatHistory(sessionId);
+            setMessages([]);
+        } catch (error) {
+            console.error("Failed to clear chat:", error);
+            alert("Failed to clear chat history");
+        }
+    };
+
     const handleSend = async () => {
+
         if (!input.trim() || isLoading) return;
 
         const userContent = input;
@@ -374,34 +387,46 @@ export function ChatInterface({ sessionId = "1", sessionName = "Alan Turing" }) 
                     </div>
                 </div>
 
-                {/* Mode Toggle */}
-                <div className="flex items-center gap-1 sm:gap-2 bg-white/5 border border-white/10 rounded-full p-1 flex-shrink-0">
-                    <button
-                        onClick={() => {
-                            setMode("text");
-                            setIsCallActive(false);
-                            setCallDuration(0);
-                        }}
-                        className={cn(
-                            "px-2 sm:px-4 py-1 rounded-full text-xs sm:text-sm font-medium transition-all duration-200 whitespace-nowrap",
-                            mode === "text"
-                                ? "bg-primary text-white shadow-lg shadow-primary/20"
-                                : "text-muted-foreground hover:text-white"
-                        )}
+                {/* Clear Chat & Mode Toggle */}
+                <div className="flex items-center gap-2 flex-shrink-0">
+                    <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={handleClearChat}
+                        title="Clear Chat History"
+                        className="h-8 w-8 sm:h-10 sm:w-10 rounded-full bg-white/5 border border-white/10 text-muted-foreground hover:text-red-400 hover:bg-white/10"
                     >
-                        Text
-                    </button>
-                    <button
-                        onClick={() => setMode("call")}
-                        className={cn(
-                            "px-2 sm:px-4 py-1 rounded-full text-xs sm:text-sm font-medium transition-all duration-200 whitespace-nowrap",
-                            mode === "call"
-                                ? "bg-primary text-white shadow-lg shadow-primary/20"
-                                : "text-muted-foreground hover:text-white"
-                        )}
-                    >
-                        Call
-                    </button>
+                        <Trash2 size={16} className="sm:size-[18px]" />
+                    </Button>
+
+                    <div className="flex items-center gap-1 sm:gap-2 bg-white/5 border border-white/10 rounded-full p-1">
+                        <button
+                            onClick={() => {
+                                setMode("text");
+                                setIsCallActive(false);
+                                setCallDuration(0);
+                            }}
+                            className={cn(
+                                "px-2 sm:px-4 py-1 rounded-full text-xs sm:text-sm font-medium transition-all duration-200 whitespace-nowrap",
+                                mode === "text"
+                                    ? "bg-primary text-white shadow-lg shadow-primary/20"
+                                    : "text-muted-foreground hover:text-white"
+                            )}
+                        >
+                            Text
+                        </button>
+                        <button
+                            onClick={() => setMode("call")}
+                            className={cn(
+                                "px-2 sm:px-4 py-1 rounded-full text-xs sm:text-sm font-medium transition-all duration-200 whitespace-nowrap",
+                                mode === "call"
+                                    ? "bg-primary text-white shadow-lg shadow-primary/20"
+                                    : "text-muted-foreground hover:text-white"
+                            )}
+                        >
+                            Call
+                        </button>
+                    </div>
                 </div>
             </div>
 
@@ -593,21 +618,7 @@ export function ChatInterface({ sessionId = "1", sessionName = "Alan Turing" }) 
                                 transition={{ delay: 0.4 }}
                                 className="flex items-center gap-3 sm:gap-6 mt-4 sm:mt-8"
                             >
-                                <Button
-                                    size="lg"
-                                    className="h-10 w-10 sm:h-14 sm:w-14 rounded-full bg-white/10 hover:bg-white/20 border border-white/20 text-white p-0"
-                                    title="Toggle Audio"
-                                >
-                                    <Volume2 size={18} className="sm:size-[24px]" />
-                                </Button>
 
-                                <Button
-                                    size="lg"
-                                    className="h-10 w-10 sm:h-14 sm:w-14 rounded-full bg-white/10 hover:bg-white/20 border border-white/20 text-white p-0"
-                                    title="Toggle Video"
-                                >
-                                    <Eye size={18} className="sm:size-[24px]" />
-                                </Button>
 
                                 <Button
                                     onClick={handleCallToggle}
