@@ -50,8 +50,10 @@ from chatbot import PersonaChatbot
 
 # --- Voice/TTS imports ---
 from wavespeed_manager import WaveSpeedManager
+from wavespeed_manager import WaveSpeedManager
 from secrets_manager import (
-    get_wavespeed_key, save_wavespeed_key, has_wavespeed_key, delete_secret
+    get_wavespeed_key, save_wavespeed_key, has_wavespeed_key, delete_secret,
+    get_gemini_key, save_gemini_key, has_gemini_key
 )
 
 app = Flask(__name__)
@@ -62,14 +64,11 @@ CORS(app, origins=["http://localhost:5173", "http://127.0.0.1:5173"])
 # --- Configuration & Directories ---
 CHATS_DIR = Path(__file__).parent / "data" / "chats"
 CHATS_DIR.mkdir(parents=True, exist_ok=True)
+SETTINGS_FILE = Path(__file__).parent / "data" / "user_settings.json"
 
 ALLOWED_TEXT_EXTENSIONS = {'.txt', '.json', '.zip', '.html'}
 
 # --- Global State ---
-settings_db = {
-    "model_version": "v2.5",
-    "temperature": 0.7
-}
 # Lazy-loaded Gemini model
 _gemini_model = None
 # Lazy-loaded WaveSpeed manager
@@ -82,11 +81,42 @@ pending_zips = {}
 
 # --- Helper Functions ---
 
+def load_settings():
+    if SETTINGS_FILE.exists():
+        try:
+            with open(SETTINGS_FILE, "r") as f:
+                return json.load(f)
+        except Exception:
+            pass
+    # Defaults
+    return {
+        "chatbot_model": "gemini-flash-latest",
+        "training_model": "gemini-3-flash-preview",
+        "embedding_model": "gemini-embedding-001"
+    }
+
+def save_settings(new_settings):
+    # Merge with existing
+    current = load_settings()
+    current.update(new_settings)
+    SETTINGS_FILE.parent.mkdir(parents=True, exist_ok=True)
+    with open(SETTINGS_FILE, "w") as f:
+        json.dump(current, f, indent=2)
+
 def get_gemini_model():
     global _gemini_model
-    if _gemini_model is None:
-        _gemini_model = genai.GenerativeModel("gemini-2.5-flash-lite")
-    return _gemini_model
+    # Always check for fresh key in case it was updated
+    api_key = get_gemini_key()
+    if api_key:
+        genai.configure(api_key=api_key)
+        
+    settings = load_settings()
+    model_name = settings.get("chatbot_model", "gemini-flash-latest")
+    
+    # We re-instantiate if model name changed or first load, 
+    # but for simplicity in this architecture we just create fresh or lazily update.
+    # Since genai.GenerativeModel is lightweight, we can just return a new one configured with the right model.
+    return genai.GenerativeModel(model_name)
 
 def get_wavespeed_manager(force_reload: bool = False):
     global _wavespeed_manager
@@ -640,12 +670,20 @@ def refresh_chat_memory(session_id):
                 # Style Summary
                 yield f"data: {json.dumps({'step': 'summary', 'progress': 50, 'message': f'Analyzing style for {subject}...'})}\n\n"
                 summary_path = processed_dir / f"{subject}_style_summary.txt"
-                generate_style_summary(str(temp_style), str(summary_path), subject)
+                
+                settings = load_settings()
+                train_model = settings.get("training_model", "gemini-3-flash-preview")
+                
+                generate_style_summary(str(temp_style), str(summary_path), subject, model_name=train_model)
                 
                 # Embeddings
                 yield f"data: {json.dumps({'step': 'embeddings', 'progress': 70, 'message': f'Generating embeddings for {subject}...'})}\n\n"
                 embeddings_path = processed_dir / f"{subject}_embeddings.json"
-                generate_embeddings(str(chunks_path), str(embeddings_path))
+                
+                settings = load_settings()
+                embed_model = settings.get("embedding_model", "gemini-embedding-001")
+                
+                generate_embeddings(str(chunks_path), str(embeddings_path), model_name=embed_model)
                 
                 if temp_style.exists(): temp_style.unlink()
             
@@ -817,8 +855,50 @@ def get_voice_status(session_id):
     })
 
 @app.route("/api/settings", methods=["GET"])
-def get_settings():
-    return jsonify(settings_db)
+def get_user_settings():
+    return jsonify(load_settings())
+
+@app.route("/api/settings", methods=["PUT"])
+def update_user_settings():
+    new_settings = request.json
+    save_settings(new_settings)
+    return jsonify(load_settings())
+
+@app.route("/api/settings/wavespeed-key", methods=["GET"])
+def check_wavespeed_key():
+    return jsonify({"configured": has_wavespeed_key()})
+
+@app.route("/api/settings/wavespeed-key", methods=["POST"])
+def set_wavespeed_key():
+    key = request.json.get("api_key")
+    if not key: return jsonify({"error": "No key provided"}), 400
+    if save_wavespeed_key(key):
+        return jsonify({"success": True})
+    return jsonify({"error": "Failed to save"}), 500
+
+@app.route("/api/settings/wavespeed-key", methods=["DELETE"])
+def remove_wavespeed_key():
+    delete_secret("wavespeed_api_key")
+    return jsonify({"success": True})
+
+@app.route("/api/settings/gemini-key", methods=["GET"])
+def check_gemini_key():
+    return jsonify({"configured": has_gemini_key()})
+
+@app.route("/api/settings/gemini-key", methods=["POST"])
+def set_gemini_key():
+    key = request.json.get("api_key")
+    if not key: return jsonify({"error": "No key provided"}), 400
+    if save_gemini_key(key):
+        # Configure immediately for this process
+        genai.configure(api_key=key)
+        return jsonify({"success": True})
+    return jsonify({"error": "Failed to save"}), 500
+
+@app.route("/api/settings/gemini-key", methods=["DELETE"])
+def remove_gemini_key():
+    delete_secret("gemini_api_key")
+    return jsonify({"success": True})
 
 @app.route("/api/warmup", methods=["GET", "POST"])
 def warmup():

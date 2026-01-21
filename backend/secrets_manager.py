@@ -167,3 +167,18 @@ def save_wavespeed_key(api_key: str) -> bool:
 def has_wavespeed_key() -> bool:
     """Check if WaveSpeed API key is configured."""
     return bool(get_wavespeed_key())
+
+
+def get_gemini_key() -> Optional[str]:
+    """Get Gemini API key."""
+    return get_secret("gemini_api_key", fallback_env="GEMINI_API_KEY")
+
+
+def save_gemini_key(api_key: str) -> bool:
+    """Save Gemini API key."""
+    return save_secret("gemini_api_key", api_key)
+
+
+def has_gemini_key() -> bool:
+    """Check if Gemini API key is configured."""
+    return bool(get_gemini_key())

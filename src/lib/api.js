@@ -321,3 +321,31 @@ export async function testWaveSpeedKey() {
     }
     return data;
 }
+
+// --- Gemini API Key Management ---
+export async function getGeminiKeyStatus() {
+    const response = await fetch(`${API_BASE}/settings/gemini-key`);
+    if (!response.ok) throw new Error('Failed to check Gemini key status');
+    return response.json();
+}
+
+export async function saveGeminiKey(apiKey) {
+    const response = await fetch(`${API_BASE}/settings/gemini-key`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ api_key: apiKey }),
+    });
+    if (!response.ok) {
+        const error = await response.json().catch(() => ({}));
+        throw new Error(error.error || 'Failed to save API key');
+    }
+    return response.json();
+}
+
+export async function deleteGeminiKey() {
+    const response = await fetch(`${API_BASE}/settings/gemini-key`, {
+        method: 'DELETE',
+    });
+    if (!response.ok) throw new Error('Failed to delete API key');
+    return response.json();
+}

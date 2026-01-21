@@ -155,7 +155,7 @@ def truncate_section(section_content, percentage):
     return '\n'.join(lines[-keep_count:])
 
 
-def generate_style_summary(style_path, output_path, subject_name):
+def generate_style_summary(style_path, output_path, subject_name, model_name="gemini-3-flash-preview"):
     """
     Generate a comprehensive style summary using Gemini.
     
@@ -163,8 +163,10 @@ def generate_style_summary(style_path, output_path, subject_name):
         style_path: Path to the {name}_style.txt file
         output_path: Path to write the output summary
         subject_name: Name of the subject whose style is being analyzed
+        model_name: Name of the Gemini model to use (default: gemini-3-flash-preview)
     """
     print(f"\n--- Generating Style Summary for {subject_name} ---")
+    print(f"  Using model: {model_name}")
     
     # Read the style file
     with open(style_path, 'r', encoding='utf-8') as f:
@@ -177,7 +179,7 @@ def generate_style_summary(style_path, output_path, subject_name):
     print(f"  Found {len(sections)} source file section(s)")
     
     # Initialize Gemini model
-    model = genai.GenerativeModel('gemini-3-flash-preview')
+    model = genai.GenerativeModel(model_name)
     
     # Generate the analysis
     print("  Calling Gemini for style analysis...")

@@ -17,7 +17,7 @@ load_dotenv(ROOT_DIR / ".env")
 genai.configure(api_key=os.getenv('GEMINI_API_KEY'))
 
 
-def generate_embeddings(chunks_path, output_path, batch_size=100):
+def generate_embeddings(chunks_path, output_path, batch_size=100, model_name="models/text-embedding-004"):
     """
     Generate embeddings for all context chunks.
     
@@ -25,8 +25,10 @@ def generate_embeddings(chunks_path, output_path, batch_size=100):
         chunks_path: Path to the context chunks JSON file
         output_path: Path to write the embeddings JSON file
         batch_size: Number of chunks to embed in each API call
+        model_name: Name of the embedding model to use (default: models/text-embedding-004)
     """
     print(f"\n--- Generating Embeddings ---")
+    print(f"  Using model: {model_name}")
     
     # Load chunks
     with open(chunks_path, 'r', encoding='utf-8') as f:
@@ -56,7 +58,7 @@ def generate_embeddings(chunks_path, output_path, batch_size=100):
         
         try:
             result = genai.embed_content(
-                model="models/text-embedding-004",
+                model=model_name,
                 content=batch,
                 task_type="retrieval_document"
             )
@@ -74,7 +76,7 @@ def generate_embeddings(chunks_path, output_path, batch_size=100):
     output_data = {
         'subject': subject,
         'chunks': chunks,
-        'embedding_model': 'text-embedding-004',
+        'embedding_model': model_name,
         'embedding_dimension': len(all_embeddings[0]) if all_embeddings and all_embeddings[0] else 0
     }
     
