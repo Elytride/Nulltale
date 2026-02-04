@@ -137,7 +137,7 @@ export default function Home() {
                         sessionName={currentSession.name}
                     />
                 ) : (
-                    /* Nulltale Home Screen (Empty State) */
+                    /* AlterEcho Home Screen (Empty State) */
                     <div className="flex-1 flex flex-col items-center justify-center p-8 relative overflow-hidden">
                         {/* Background Effects */}
                         <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_50%,rgba(120,58,237,0.15),transparent_50%)] pointer-events-none" />
@@ -153,7 +153,7 @@ export default function Home() {
 
                         {/* Title */}
                         <h1 className="text-4xl font-display font-bold text-white mb-3 tracking-tight">
-                            Nulltale
+                            AlterEcho
                         </h1>
                         <p className="text-muted-foreground text-center max-w-md mb-8">
                             Resurrect digital personalities from chat histories. Upload your data, train the AI, and start a conversation.
@@ -185,7 +185,7 @@ export default function Home() {
                             onClick={handleNewChat}
                         >
                             <Plus className="mr-2 h-5 w-5" />
-                            Create New Chat
+                            Create New Echo
                         </Button>
                     </div>
                 )}

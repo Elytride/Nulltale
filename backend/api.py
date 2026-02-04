@@ -1,5 +1,5 @@
 """
-NullTale Backend API - Per-Chat Architecture
+AlterEcho Backend API - Per-Chat Architecture
 Combines file processing and Chat/Voice features into session-specific isolation.
 """
 
@@ -25,7 +25,7 @@ from dotenv import load_dotenv
 from google import genai
 from google.genai import types
 
-# Load .env from root Nulltale folder
+# Load .env from root AlterEcho folder
 ROOT_DIR = Path(__file__).parent.parent
 load_dotenv(ROOT_DIR / ".env")
 
@@ -364,7 +364,7 @@ def create_session():
     # Initialize a new session
     session_id = uuid.uuid4().hex[:8]
     data = request.json or {}
-    name = data.get("name", "New Chat")
+    name = data.get("name", "New Echo")
     
     session_data = {
         "id": session_id,
@@ -745,7 +745,7 @@ def refresh_chat_memory(session_id):
                     
                     try:
                         clean_name = "".join(c for c in session_data["name"] if c.isalnum())
-                        voice_name_id = f"NullTale{session_id[-6:]}{clean_name}"
+                        voice_name_id = f"AlterEcho{session_id[-6:]}{clean_name}"
                         
                         voice_id = manager.clone_voice(voice_name_id, target_file["path"])
                         

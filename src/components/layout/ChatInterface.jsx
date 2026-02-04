@@ -653,7 +653,7 @@ export function ChatInterface({ sessionId = "1", sessionName = "Alan Turing" }) 
                                     </div>
                                 </div>
                                 <div className="text-center mt-2 sm:mt-3 text-[8px] sm:text-xs text-muted-foreground/40 font-mono hidden sm:block">
-                                    NULLTALE ENGINE ACTIVE // ENCRYPTION ENABLED
+                                    ALTERECHO ENGINE ACTIVE // ENCRYPTION ENABLED
                                 </div>
                             </div>
                         </div>

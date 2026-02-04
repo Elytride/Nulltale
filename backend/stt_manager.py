@@ -1,5 +1,5 @@
 """
-NullTale STT Manager
+AlterEcho STT Manager
 --------------------
 Handles Speech-to-Text using Google Cloud Speech-to-Text API.
 Transcribes audio files to text.

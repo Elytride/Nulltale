@@ -1,5 +1,5 @@
 """
-NullTale Secrets Manager
+AlterEcho Secrets Manager
 ------------------------
 Securely stores API keys and other secrets in an encrypted local file.
 Keys are encrypted using Fernet (AES-128-CBC) with a machine-derived key.

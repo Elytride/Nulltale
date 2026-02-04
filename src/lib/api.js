@@ -1,5 +1,5 @@
 /**
- * API Service Layer for NullTale
+ * API Service Layer for AlterEcho
  * Handles all communication with the Python backend
  */
 

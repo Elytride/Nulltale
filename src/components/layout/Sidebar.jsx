@@ -48,7 +48,7 @@ export function Sidebar({
                     <div className="w-8 h-8 rounded-lg bg-primary/20 flex items-center justify-center border border-primary/20 text-primary">
                         <Cpu size={18} />
                     </div>
-                    <h1 className="text-xl font-display font-bold tracking-tight text-white">Nulltale</h1>
+                    <h1 className="text-xl font-display font-bold tracking-tight text-white">AlterEcho</h1>
                 </div>
 
                 <Button
@@ -57,7 +57,7 @@ export function Sidebar({
                     onClick={onNewChat}
                 >
                     <Plus size={16} />
-                    New Chat
+                    New Echo
                 </Button>
 
                 <div className="text-xs font-medium text-muted-foreground mb-4 uppercase tracking-wider">

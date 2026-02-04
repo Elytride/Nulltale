@@ -45,8 +45,8 @@ import Line4 from "@/images/linedemo/line4.png";
 
 const FAQ_ITEMS = [
     {
-        question: "How do I create a new Chat?",
-        answer: "Click the 'New Chat' button at the top. Make sure you've uploaded training data and refreshed AI Memory first."
+        question: "How do I create a new Echo?",
+        answer: "Click the 'New Echo' button at the top. Make sure you've uploaded training data and refreshed AI Memory first."
     },
     {
         question: "What data can I upload?",

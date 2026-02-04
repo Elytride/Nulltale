@@ -31,7 +31,7 @@ export function CreateChatModal({ open, onOpenChange, onSessionCreated }) {
         <Dialog open={open} onOpenChange={onOpenChange}>
             <DialogContent className="sm:max-w-[425px] bg-sidebar border-white/10 text-white">
                 <DialogHeader>
-                    <DialogTitle>New Chat</DialogTitle>
+                    <DialogTitle>New Echo</DialogTitle>
                     <DialogDescription className="text-muted-foreground">
                         Give your new personality a name to get started.
                     </DialogDescription>
