@@ -25,7 +25,7 @@ class PersonaChatbot:
     A chatbot that replicates a person's talking style with RAG-based knowledge.
     """
     
-    def __init__(self, style_summary_path, embeddings_path, max_history=10, client=None, model_name="gemini-2.0-flash"):
+    def __init__(self, style_summary_path, embeddings_path, max_history=10, client=None, model_name="gemini-flash-latest"):
         """
         Initialize the chatbot.
         
@@ -50,7 +50,7 @@ class PersonaChatbot:
             self.client = genai.Client(api_key=api_key)
             
         self.model_name = model_name
-        self.image_model_name = "gemini-2.0-flash" # Default fallback, will be overridden by settings
+        self.image_model_name = "gemini-2.5-flash-image" # Default fallback, will be overridden by settings
         
         # Initialize context retriever
         self.retriever = ContextRetriever(embeddings_path, client=self.client)

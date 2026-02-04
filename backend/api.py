@@ -767,7 +767,11 @@ def refresh_chat_memory(session_id):
         except Exception as e:
             yield f"data: {json.dumps({'step': 'error', 'message': str(e)})}\n\n"
             
-    return Response(stream_with_context(generate()), mimetype='text/event-stream')
+    return Response(stream_with_context(generate()), mimetype='text/event-stream', headers={
+        'X-Accel-Buffering': 'no',
+        'Cache-Control': 'no-cache',
+        'Connection': 'keep-alive'
+    })
 
 # --- API Endpoints: Chat & Voice Status ---
 

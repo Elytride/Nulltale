@@ -28,8 +28,8 @@ Follow these steps to run AlterEcho locally.
 
 ### 1. Clone the Repository
 ```bash
-git clone https://github.com/yourusername/alterecho.git
-cd alterecho
+git clone https://github.com/Elytride/AlterEcho.git
+cd AlterEcho
 ```
 
 ### 2. Backend Setup
@@ -43,14 +43,7 @@ The backend runs on Flask and handles all AI processing.
     ```bash
     pip install -r requirements.txt
     ```
-3.  Set up your environment variables:
-    *   Create a `.env` file in the **root** folder (one level up from `backend/`).
-    *   Add your keys:
-        ```ini
-        GEMINI_API_KEY=your_gemini_key_here
-        WAVESPEED_API_KEY=your_wavespeed_key_here
-        ```
-4.  Run the server:
+3.  Run the server:
     ```bash
     python api.py
     ```
@@ -61,7 +54,7 @@ The frontend is a modern React application built with Vite.
 
 1.  Open a new terminal and navigate to the root folder:
     ```bash
-    cd alterecho
+    cd AlterEcho
     ```
 2.  Install Node dependencies:
     ```bash
