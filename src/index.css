@@ -3,6 +3,39 @@
 
 @custom-variant dark (&:is(.dark *));
 
+/* Mobile safe area support */
+:root {
+  --safe-area-inset-top: env(safe-area-inset-top);
+  --safe-area-inset-right: env(safe-area-inset-right);
+  --safe-area-inset-bottom: env(safe-area-inset-bottom);
+  --safe-area-inset-left: env(safe-area-inset-left);
+}
+
+/* Improve touch interactions on mobile */
+* {
+  -webkit-tap-highlight-color: transparent;
+  -webkit-touch-callout: none;
+}
+
+input, textarea, button, select, a {
+  -webkit-tap-highlight-color: rgba(124, 58, 237, 0.2);
+}
+
+/* Prevent text selection on UI elements */
+button, .no-select {
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  user-select: none;
+}
+
+/* Smooth scrolling */
+html {
+  scroll-behavior: smooth;
+  -webkit-overflow-scrolling: touch;
+}
+
+@custom-variant dark (&:is(.dark *));
+
 @theme inline {
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
@@ -48,6 +81,23 @@
 
   --font-sans: "Inter", sans-serif;
   --font-display: "Space Grotesk", sans-serif;
+}
+
+/* Safe area utility classes */
+.pt-safe {
+  padding-top: max(1rem, var(--safe-area-inset-top));
+}
+
+.pb-safe {
+  padding-bottom: max(1rem, var(--safe-area-inset-bottom));
+}
+
+.pl-safe {
+  padding-left: max(1rem, var(--safe-area-inset-left));
+}
+
+.pr-safe {
+  padding-right: max(1rem, var(--safe-area-inset-right));
 }
 
 :root {

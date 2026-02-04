@@ -10,6 +10,7 @@ import { Progress } from "@/components/ui/progress";
 import { motion, AnimatePresence } from "framer-motion";
 import { uploadFile, refreshAIMemory, checkRefreshReady, setSubject, deleteUploadedFile, listFiles, cloneVoice, getVoiceStatus, selectZipConversations } from "@/lib/api";
 import { cn } from "@/lib/utils";
+import * as Storage from "@/lib/storage";
 
 // File type badge component
 function FileTypeBadge({ type }) {
@@ -53,6 +54,7 @@ export function ManageChatModal({ open, onOpenChange, currentSession }) {
     const [refreshReady, setRefreshReady] = useState({ ready: false, reason: '' });
     const [refreshError, setRefreshError] = useState(null);
     const [successMessage, setSuccessMessage] = useState(null);
+    const [apiKeys, setApiKeys] = useState({});
 
     // Voice cloning state
     const [voiceStatus, setVoiceStatus] = useState(null);
@@ -79,8 +81,15 @@ export function ManageChatModal({ open, onOpenChange, currentSession }) {
         if (open && sessionId) {
             refreshFileList();
             fetchVoiceStatus();
+            fetchApiKeys();
         }
     }, [open, sessionId]);
+
+    const fetchApiKeys = async () => {
+        const gemini_api_key = await Storage.getGeminiKey();
+        const wavespeed_api_key = await Storage.getWaveSpeedKey();
+        setApiKeys({ gemini_api_key, wavespeed_api_key });
+    };
 
     const fetchVoiceStatus = async () => {
         if (!sessionId) return;
@@ -129,30 +138,55 @@ export function ManageChatModal({ open, onOpenChange, currentSession }) {
         }
     };
 
-    // Audio preview handler
-    const handlePlayAudio = (fileId, filePath) => {
+    // Audio preview handler - loads audio from IndexedDB
+    const handlePlayAudio = async (fileId) => {
         if (playingAudioId === fileId) {
             // Stop playing
             if (audioRef.current) {
                 audioRef.current.pause();
                 audioRef.current.currentTime = 0;
+                // Revoke the blob URL to free memory
+                if (audioRef.current.src) {
+                    URL.revokeObjectURL(audioRef.current.src);
+                }
             }
             setPlayingAudioId(null);
         } else {
             // Start playing new file
             if (audioRef.current) {
                 audioRef.current.pause();
+                if (audioRef.current.src) {
+                    URL.revokeObjectURL(audioRef.current.src);
+                }
             }
-            const audioUrl = `http://localhost:5000/api/chats/${sessionId}/files/voice/${fileId}/preview`;
-            const audio = new Audio(audioUrl);
-            audio.onended = () => setPlayingAudioId(null);
-            audio.onerror = () => {
-                console.error("Audio playback error");
-                setPlayingAudioId(null);
-            };
-            audioRef.current = audio;
-            audio.play();
-            setPlayingAudioId(fileId);
+
+            try {
+                // Import Storage and get blob from IndexedDB
+                const { getUploadBlob } = await import('@/lib/storage');
+                const blob = await getUploadBlob(sessionId, fileId);
+
+                if (!blob) {
+                    console.error("Audio file not found in storage");
+                    return;
+                }
+
+                const audioUrl = URL.createObjectURL(blob);
+                const audio = new Audio(audioUrl);
+                audio.onended = () => {
+                    URL.revokeObjectURL(audioUrl);
+                    setPlayingAudioId(null);
+                };
+                audio.onerror = () => {
+                    console.error("Audio playback error");
+                    URL.revokeObjectURL(audioUrl);
+                    setPlayingAudioId(null);
+                };
+                audioRef.current = audio;
+                audio.play();
+                setPlayingAudioId(fileId);
+            } catch (error) {
+                console.error("Failed to load audio:", error);
+            }
         }
     };
 
@@ -663,6 +697,12 @@ export function ManageChatModal({ open, onOpenChange, currentSession }) {
                         </div>
 
                         <div className="p-4 rounded-xl bg-black/20 border border-white/5 space-y-4">
+                            {!apiKeys.wavespeed_api_key && (
+                                <div className="flex items-center gap-2 p-3 bg-yellow-400/10 border border-yellow-400/20 rounded-lg text-yellow-500 text-xs">
+                                    <AlertCircle size={14} className="flex-shrink-0" />
+                                    Wavespeed API Key missing. Voice features unavailable.
+                                </div>
+                            )}
                             {/* Voice Status Banner */}
                             {voiceStatus && (
                                 <div className={cn(
@@ -751,7 +791,7 @@ export function ManageChatModal({ open, onOpenChange, currentSession }) {
                                     </div>
                                     {uploadedFiles.voice.map((file) => (
                                         <div key={file.id} className="bg-white/5 rounded-lg p-3 flex items-center gap-2">
-                                            <Mic size={14} className="text-purple-400 flex-shrink-0" />
+                                            <Mic size={16} className="md:size-[14px] text-purple-400 flex-shrink-0" />
                                             <span className="truncate flex-1 text-sm">{file.original_name || file.saved_as}</span>
                                             {file.size && (
                                                 <span className="text-xs text-muted-foreground">{formatFileSize(file.size)}</span>
@@ -759,19 +799,19 @@ export function ManageChatModal({ open, onOpenChange, currentSession }) {
                                             <Button
                                                 variant="ghost"
                                                 size="icon"
-                                                className="h-6 w-6 text-muted-foreground hover:text-purple-400"
+                                                className="h-9 w-9 md:h-6 md:w-6 text-muted-foreground hover:text-purple-400 active:scale-95 transition-transform"
                                                 onClick={() => handlePlayAudio(file.id)}
                                                 title={playingAudioId === file.id ? "Stop" : "Play preview"}
                                             >
-                                                {playingAudioId === file.id ? <Pause size={14} /> : <Play size={14} />}
+                                                {playingAudioId === file.id ? <Pause size={16} className="md:size-[14px]" /> : <Play size={16} className="md:size-[14px]" />}
                                             </Button>
                                             <Button
                                                 variant="ghost"
                                                 size="icon"
-                                                className="h-6 w-6 text-muted-foreground hover:text-red-400"
+                                                className="h-9 w-9 md:h-6 md:w-6 text-muted-foreground hover:text-red-400 active:scale-95 transition-transform"
                                                 onClick={() => handleDeleteFile('voice', file.id)}
                                             >
-                                                <Trash2 size={14} />
+                                                <Trash2 size={16} className="md:size-[14px]" />
                                             </Button>
                                         </div>
                                     ))}
@@ -817,6 +857,12 @@ export function ManageChatModal({ open, onOpenChange, currentSession }) {
                                 animate={{ opacity: 1, y: 0 }}
                                 className="space-y-2"
                             >
+                                {!apiKeys.gemini_api_key && (
+                                    <div className="flex items-center gap-2 p-3 mb-2 bg-yellow-400/10 border border-yellow-400/20 rounded-lg text-yellow-500 text-xs">
+                                        <AlertCircle size={14} className="flex-shrink-0" />
+                                        Gemini API Key missing. Cannot refresh memory.
+                                    </div>
+                                )}
                                 {!refreshReady.ready && (
                                     <p className="text-xs text-muted-foreground text-center mb-2">
                                         {refreshReady.reason || 'Upload files and select subjects to enable processing'}
@@ -826,7 +872,7 @@ export function ManageChatModal({ open, onOpenChange, currentSession }) {
                                     onClick={handleRefresh}
                                     disabled={!refreshReady.ready}
                                     className={cn(
-                                        "w-full h-12 text-md font-medium transition-all",
+                                        "w-full h-14 md:h-12 text-base md:text-md font-medium transition-all active:scale-95",
                                         refreshReady.ready
                                             ? "bg-gradient-to-r from-primary to-blue-600 hover:from-primary/90 hover:to-blue-600/90 text-white shadow-lg shadow-primary/20"
                                             : "bg-white/5 text-muted-foreground cursor-not-allowed"

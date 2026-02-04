@@ -13,12 +13,16 @@ import { Loader2, Check, X, Eye, EyeOff, KeyRound, Trash2, Info, AlertTriangle, 
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
 export function SettingsModal({ open, onOpenChange }) {
-    // General Settings
-    const [settings, setSettings] = useState({
+    // Default settings - must match storage.js
+    const DEFAULT_SETTINGS = {
         chatbot_model: "gemini-flash-latest",
         training_model: "gemini-3-flash-preview",
-        embedding_model: "gemini-embedding-001"
-    });
+        embedding_model: "gemini-embedding-001",
+        image_model: "gemini-2.5-flash-image"
+    };
+
+    // General Settings
+    const [settings, setSettings] = useState(DEFAULT_SETTINGS);
     const [isSaving, setIsSaving] = useState(false);
     const [isLoading, setIsLoading] = useState(true);
 
@@ -41,9 +45,9 @@ export function SettingsModal({ open, onOpenChange }) {
             async function fetchAllSettings() {
                 setIsLoading(true);
                 try {
-                    // Fetch main settings
+                    // Fetch main settings and merge with defaults for any missing fields
                     const data = await getSettings();
-                    setSettings(data);
+                    setSettings({ ...DEFAULT_SETTINGS, ...data });
 
                     // Fetch Key Statuses
                     const gStatus = await getGeminiKeyStatus();
@@ -79,12 +83,7 @@ export function SettingsModal({ open, onOpenChange }) {
 
     const handleResetDefaults = async () => {
         if (!confirm("Reset all model preferences to default? API keys will NOT be removed.")) return;
-        const defaults = {
-            chatbot_model: "gemini-flash-latest",
-            training_model: "gemini-3-flash-preview",
-            embedding_model: "gemini-embedding-001"
-        };
-        setSettings(defaults);
+        setSettings(DEFAULT_SETTINGS);
     };
 
     // --- Gemini Key Handlers ---
@@ -151,7 +150,7 @@ export function SettingsModal({ open, onOpenChange }) {
     }) => (
         <div className="space-y-2">
             <div className="flex items-center justify-between">
-                <Label className="flex items-center gap-2">
+                <Label className="flex items-center gap-2 text-sm md:text-base">
                     {label}
                     {optional && <span className="text-[10px] bg-white/10 px-1.5 py-0.5 rounded text-muted-foreground">Optional</span>}
                 </Label>
@@ -169,12 +168,12 @@ export function SettingsModal({ open, onOpenChange }) {
                         value={value}
                         onChange={(e) => onChange(e.target.value)}
                         placeholder={configured ? "Key stored securely. Enter new to update..." : "Enter API Key..."}
-                        className="bg-white/5 border-white/10 font-mono pr-10"
+                        className="bg-white/5 border-white/10 font-mono pr-10 h-11 md:h-10 text-sm md:text-base"
                     />
                     <button
                         type="button"
                         onClick={onToggleShow}
-                        className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-white transition-colors"
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-white transition-colors p-2 active:scale-95"
                     >
                         {show ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                     </button>
@@ -183,7 +182,7 @@ export function SettingsModal({ open, onOpenChange }) {
                     size="icon"
                     onClick={onSave}
                     disabled={!value.trim() || isSaving}
-                    className="bg-primary hover:bg-primary/90 shrink-0"
+                    className="bg-primary hover:bg-primary/90 shrink-0 h-11 w-11 md:h-10 md:w-10 active:scale-95 transition-transform"
                 >
                     {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> :
                         status === 'success' ? <Check className="w-4 h-4" /> :
@@ -195,7 +194,7 @@ export function SettingsModal({ open, onOpenChange }) {
                         variant="ghost"
                         size="icon"
                         onClick={onDelete}
-                        className="text-red-400 hover:text-red-300 hover:bg-red-400/10 shrink-0"
+                        className="text-red-400 hover:text-red-300 hover:bg-red-400/10 shrink-0 h-11 w-11 md:h-10 md:w-10 active:scale-95 transition-transform"
                     >
                         <Trash2 className="w-4 h-4" />
                     </Button>
@@ -235,10 +234,10 @@ export function SettingsModal({ open, onOpenChange }) {
 
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
-            <DialogContent className="sm:max-w-[500px] max-h-[85vh] overflow-y-auto bg-sidebar border-white/10 text-white scrollbar-thin scrollbar-thumb-white/10 scrollbar-track-transparent">
+            <DialogContent className="sm:max-w-[500px] max-h-[90vh] md:max-h-[85vh] overflow-y-auto bg-sidebar border-white/10 text-white scrollbar-thin scrollbar-thumb-white/10 scrollbar-track-transparent">
                 <DialogHeader>
-                    <DialogTitle className="font-display tracking-tight flex items-center gap-2">
-                        <Shield className="w-5 h-5 text-primary" />
+                    <DialogTitle className="font-display tracking-tight flex items-center gap-2 text-xl md:text-2xl">
+                        <Shield className="w-5 h-5 md:w-5 md:h-5 text-primary" />
                         System Settings
                     </DialogTitle>
                 </DialogHeader>

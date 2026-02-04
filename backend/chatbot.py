@@ -25,20 +25,32 @@ class PersonaChatbot:
     A chatbot that replicates a person's talking style with RAG-based knowledge.
     """
     
-    def __init__(self, style_summary_path, embeddings_path, max_history=10, client=None, model_name="gemini-flash-latest"):
+    def __init__(self, style_summary_path=None, embeddings_path=None, 
+                 style_summary=None, embeddings_data=None,
+                 max_history=10, client=None, model_name="gemini-flash-latest",
+                 inline_mode=False, image_history=None):
         """
         Initialize the chatbot.
         
         Args:
-            style_summary_path: Path to the style summary txt file
-            embeddings_path: Path to the context embeddings JSON file
+            style_summary_path: Path to the style summary txt file (file mode)
+            embeddings_path: Path to the context embeddings JSON file (file mode)
+            style_summary: Style summary text content (inline mode)
+            embeddings_data: Embeddings dict data (inline mode)
             max_history: Maximum number of conversation turns to remember
             client: Optional pre-configured genai.Client instance
             model_name: Name of the model to use
+            inline_mode: If True, use inline data instead of file paths
+            image_history: Optional list of image history dicts (for stateless mode)
         """
-        # Load style summary
-        with open(style_summary_path, 'r', encoding='utf-8') as f:
-            self.style_summary = f.read()
+        # Load style summary (inline or from file)
+        if inline_mode or style_summary:
+            self.style_summary = style_summary or ""
+        elif style_summary_path:
+            with open(style_summary_path, 'r', encoding='utf-8') as f:
+                self.style_summary = f.read()
+        else:
+            self.style_summary = ""
             
         # Initialize client
         if client:
@@ -52,16 +64,23 @@ class PersonaChatbot:
         self.model_name = model_name
         self.image_model_name = "gemini-2.5-flash-image" # Default fallback, will be overridden by settings
         
-        # Initialize context retriever
-        self.retriever = ContextRetriever(embeddings_path, client=self.client)
+        # Initialize context retriever (inline or file mode)
+        if inline_mode or embeddings_data:
+            self.retriever = ContextRetriever(embeddings_data=embeddings_data, client=self.client)
+        elif embeddings_path:
+            self.retriever = ContextRetriever(embeddings_path=embeddings_path, client=self.client)
+        else:
+            # Empty retriever
+            self.retriever = ContextRetriever(embeddings_data={}, client=self.client)
+        
         self.subject = self.retriever.subject
         
         # Initialize conversation history
         self.conversation_history = []
         self.max_history = max_history
         
-        # Image history for context - stores {id, description, source: 'user'|'ai'}
-        self.image_history = []
+        # Image history for context - stores {id, description, source: 'user'|'ai', pil_image}
+        self.image_history = image_history if image_history is not None else []
         
         print(f"Chatbot initialized for {self.subject}")
         print(f"  Style summary: {len(self.style_summary):,} characters")
@@ -133,12 +152,27 @@ class PersonaChatbot:
                             "prompt": prompt
                         })
                         
-                        # Add to image history
-                        self.image_history.append({
-                            "id": img_id,
-                            "description": prompt[:100],
-                            "source": "ai"
-                        })
+                        # Create PIL Image from bytes for history
+                        try:
+                            import io
+                            from PIL import Image
+                            pil_img = Image.open(io.BytesIO(image_bytes))
+                            
+                            # Add to image history
+                            self.image_history.append({
+                                "id": img_id,
+                                "description": prompt[:100],
+                                "source": "ai",
+                                "pil_image": pil_img
+                            })
+                        except Exception as e:
+                            print(f"[DEBUG] Failed to create PIL image for history: {e}")
+                            # Fallback without image
+                            self.image_history.append({
+                                "id": img_id,
+                                "description": prompt[:100],
+                                "source": "ai"
+                            })
                         
                         print(f"[DEBUG]   Image generated successfully. ID: {img_id}")
                         return f"Image generated successfully. ID: {img_id}"
@@ -194,6 +228,7 @@ IMPORTANT: When the user asks to modify/edit/add to an image without specifying 
    - Use `mode: "edit"` with a `reference_image_id` to modify an existing image from the chat.
    - **When user asks to edit/modify/add to an image, ALWAYS use mode="edit" with the most recent image's ID.**
    - If the user asks for a picture, drawing, or edit, USE THE TOOL.
+   - **DO NOT** mention the image ID, filename, or technical details in your text response. Just show the image (by using the tool) and react to it.
    - You MUST also write a text response to accompany any image (e.g., "Check this out!", "Here you go!").
 4. **SPONTANEOUS IMAGES**: Based on your personality as {self.subject}, you may OCCASIONALLY share images without being asked:
    - Share when you're excited about something ("omg look at this!!", "I made this for you").
@@ -213,18 +248,30 @@ IMPORTANT: When the user asks to modify/edit/add to an image without specifying 
         
         formatted = []
         for turn in self.conversation_history[-self.max_history:]:
-            formatted.append(f"User: {turn['user']}")
-            formatted.append(f"{self.subject}: {turn['assistant']}")
+            # Handle tuple format (role, content) from API
+            if isinstance(turn, tuple) and len(turn) == 2:
+                role, content = turn
+                if role == "user":
+                    formatted.append(f"User: {content}")
+                else:
+                    formatted.append(f"{self.subject}: {content}")
+            # Handle dict format {'user': ..., 'assistant': ...}
+            elif isinstance(turn, dict):
+                if 'user' in turn:
+                    formatted.append(f"User: {turn['user']}")
+                if 'assistant' in turn:
+                    formatted.append(f"{self.subject}: {turn['assistant']}")
         
         return "\n".join(formatted)
     
-    def chat(self, user_message, user_image=None, top_k_context=5):
+    def chat(self, user_message, user_image=None, user_image_id=None, top_k_context=5):
         """
         Send a message and get a response (text + optional images).
         
         Args:
             user_message: The user's text message
             user_image: Optional PIL Image or bytes
+            user_image_id: Optional ID for the user image
             top_k_context: Number of context chunks to retrieve
             
         Returns:
@@ -233,6 +280,17 @@ IMPORTANT: When the user asks to modify/edit/add to an image without specifying 
                 "images": list of {id, bytes, prompt}
             }
         """
+        # Add user image to history if present
+        if user_image:
+             if not user_image_id:
+                  user_image_id = str(uuid.uuid4())[:8]
+             self.image_history.append({
+                  "id": user_image_id,
+                  "description": "User uploaded image",
+                  "source": "user",
+                  "pil_image": user_image
+             })
+
         # Reset current turn images
         self._current_turn_images = []
         
@@ -311,48 +369,69 @@ Respond as {self.subject}:"""
             current_contents = list(prompt_parts) # Start with initial prompt
             
             for _ in range(max_iterations):
+                # Check if model returned a valid response
+                if not response.candidates:
+                    print("[DEBUG] No candidates in response")
+                    assistant_message = "I apologize, I couldn't process your request."
+                    break
+                
+                content = response.candidates[0].content
+                if not content or not content.parts:
+                    # Try to get text directly from response
+                    try:
+                        if response.text:
+                            assistant_message = response.text.strip()
+                            break
+                    except:
+                        pass
+                    print("[DEBUG] No content parts in response")
+                    assistant_message = "I apologize, I had trouble processing that."
+                    break
+                
                 # Check if model wants to call a function
-                if response.candidates and response.candidates[0].content.parts:
-                    part = response.candidates[0].content.parts[0]
+                part = content.parts[0]
                     
-                    if hasattr(part, 'function_call') and part.function_call:
-                        fc = part.function_call
-                        print(f"Function Call Detected: {fc.name}")
+                if hasattr(part, 'function_call') and part.function_call:
+                    fc = part.function_call
+                    print(f"Function Call Detected: {fc.name}")
+                    
+                    if fc.name == "generate_or_edit_image":
+                        prompt_arg = fc.args.get("prompt", "")
+                        mode_arg = fc.args.get("mode", "generate")
+                        ref_id_arg = fc.args.get("reference_image_id", None)
+                        tool_result = self._generate_image_tool(prompt_arg, mode_arg, ref_id_arg)
                         
-                        if fc.name == "generate_or_edit_image":
-                            prompt_arg = fc.args.get("prompt", "")
-                            mode_arg = fc.args.get("mode", "generate")
-                            ref_id_arg = fc.args.get("reference_image_id", None)
-                            tool_result = self._generate_image_tool(prompt_arg, mode_arg, ref_id_arg)
-                            
-                            # Add the model's function call turn
-                            current_contents.append(response.candidates[0].content)
-                            
-                            # Add the function response
-                            function_response_part = types.Part.from_function_response(
-                                name="generate_or_edit_image",
-                                response={"result": tool_result}
+                        # Add the model's function call turn
+                        current_contents.append(response.candidates[0].content)
+                        
+                        # Add the function response
+                        function_response_part = types.Part.from_function_response(
+                            name="generate_or_edit_image",
+                            response={"result": tool_result}
+                        )
+                        current_contents.append(types.Content(parts=[function_response_part], role="user"))
+                        
+                        # Continue the conversation
+                        response = self.client.models.generate_content(
+                            model=self.model_name,
+                            contents=current_contents,
+                            config=types.GenerateContentConfig(
+                                tools=[tools],
                             )
-                            current_contents.append(types.Content(parts=[function_response_part], role="user"))
-                            
-                            # Continue the conversation
-                            response = self.client.models.generate_content(
-                                model=self.model_name,
-                                contents=current_contents,
-                                config=types.GenerateContentConfig(
-                                    tools=[tools],
-                                )
-                            )
-                            continue
-                    
-                    # If no function call, extract text
-                    if hasattr(part, 'text') and part.text:
-                        assistant_message = part.text.strip()
-                        break
+                        )
+                        continue
+                
+                # If no function call, extract text
+                if hasattr(part, 'text') and part.text:
+                    assistant_message = part.text.strip()
+                    break
                 else:
-                    # Fallback
-                    if response.text:
-                        assistant_message = response.text.strip()
+                    # Fallback - try to get text from response directly
+                    try:
+                        if response.text:
+                            assistant_message = response.text.strip()
+                    except:
+                        assistant_message = "I apologize, I had trouble responding."
                     break
             
             # Clean up
@@ -387,8 +466,19 @@ Respond as {self.subject}:"""
             return []
         formatted = []
         for turn in self.conversation_history[-self.max_history:]:
-            formatted.append(f"User: {turn['user']}")
-            formatted.append(f"{self.subject}: {turn['assistant']}")
+            # Handle tuple format (role, content) from API
+            if isinstance(turn, tuple) and len(turn) == 2:
+                role, content = turn
+                if role == "user":
+                    formatted.append(f"User: {content}")
+                else:
+                    formatted.append(f"{self.subject}: {content}")
+            # Handle dict format {'user': ..., 'assistant': ...}
+            elif isinstance(turn, dict):
+                if 'user' in turn:
+                    formatted.append(f"User: {turn['user']}")
+                if 'assistant' in turn:
+                    formatted.append(f"{self.subject}: {turn['assistant']}")
         return formatted
 
     def _clean_for_tts(self, text):

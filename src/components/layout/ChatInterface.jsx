@@ -5,7 +5,8 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Send, Paperclip, Mic, User, Phone, PhoneOff, Volume2, Eye, Trash2, Image as ImageIcon, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { motion, AnimatePresence } from "framer-motion";
-import { sendMessage, getMessages, streamVoiceCall, warmupModels, clearChatHistory } from "@/lib/api";
+import { sendMessage, getMessages, streamVoiceCall, warmupModels, clearChatHistory, getVoiceStatus } from "@/lib/api";
+import * as Storage from "@/lib/storage";
 
 export function ChatInterface({ sessionId = "1", sessionName = "Alan Turing" }) {
     const [messages, setMessages] = useState([]);
@@ -23,6 +24,9 @@ export function ChatInterface({ sessionId = "1", sessionName = "Alan Turing" }) 
     const audioQueueRef = useRef([]);
     const isPlayingRef = useRef(false);
 
+    // Call readiness
+    const [callReadiness, setCallReadiness] = useState({ ready: false, reason: "Checking..." });
+
     // Fetch messages on mount or session change
     useEffect(() => {
         async function fetchMessages() {
@@ -37,6 +41,50 @@ export function ChatInterface({ sessionId = "1", sessionName = "Alan Turing" }) 
         }
         fetchMessages();
     }, [sessionId, sessionName]);
+
+    // Check call readiness
+    useEffect(() => {
+        async function checkReadiness() {
+            // Don't reset to "Checking..." on every render, strictly dependencies
+            // setCallReadiness({ ready: false, reason: "Checking..." }); 
+
+            try {
+                const gemini_api_key = await Storage.getGeminiKey();
+                const wavespeed_api_key = await Storage.getWaveSpeedKey();
+
+                if (!gemini_api_key) {
+                    setCallReadiness({ ready: false, reason: "Gemini API Key missing" });
+                    return;
+                }
+
+                if (!wavespeed_api_key) {
+                    setCallReadiness({ ready: false, reason: "Wavespeed API Key missing" });
+                    return;
+                }
+
+                const status = await getVoiceStatus(sessionId || "1");
+                if (!status || status.voice_status === 'none') {
+                    setCallReadiness({ ready: false, reason: "Voice not configured" });
+                    return;
+                }
+
+                if (status.voice_status === 'expired') {
+                    setCallReadiness({ ready: false, reason: "Voice expired" });
+                    return;
+                }
+
+                setCallReadiness({ ready: true, reason: "" });
+            } catch (error) {
+                console.error("Call readiness check failed:", error);
+                setCallReadiness({ ready: false, reason: "Connection error" });
+            }
+        }
+        if (mode === "call") { // Re-check when entering call mode
+            checkReadiness();
+        } else {
+            checkReadiness(); // Also check on mount
+        }
+    }, [sessionId, mode]);
 
     const handleClearChat = async () => {
         if (!confirm("Are you sure you want to clear the current chat history? This cannot be undone.")) return;
@@ -439,33 +487,33 @@ export function ChatInterface({ sessionId = "1", sessionName = "Alan Turing" }) 
             <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_120%,rgba(120,58,237,0.1),transparent_50%)] pointer-events-none" />
 
             {/* Header */}
-            <div className="h-14 sm:h-16 border-b border-white/5 flex items-center justify-between px-3 sm:px-6 bg-background/50 backdrop-blur-sm z-10">
-                <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+            <div className="h-16 md:h-16 border-b border-white/5 flex items-center justify-between px-4 md:px-6 bg-background/50 backdrop-blur-sm z-10">
+                <div className="flex items-center gap-3 md:gap-3 min-w-0">
                     <div className={cn(
-                        "w-2 h-2 rounded-full shadow-[0_0_8px_rgba(34,197,94,0.5)] animate-pulse flex-shrink-0",
+                        "w-2.5 h-2.5 md:w-2 md:h-2 rounded-full shadow-[0_0_8px_rgba(34,197,94,0.5)] animate-pulse flex-shrink-0",
                         isCallActive && mode === "call" ? "bg-red-500" : "bg-green-500"
                     )} />
                     <div className="flex flex-col min-w-0">
-                        <span className="font-display font-medium text-white text-sm sm:text-base truncate">{sessionName}</span>
-                        <span className="text-[10px] sm:text-xs text-muted-foreground truncate">
+                        <span className="font-display font-medium text-white text-base md:text-base truncate">{sessionName}</span>
+                        <span className="text-xs md:text-xs text-muted-foreground truncate">
                             {isCallActive && mode === "call" ? `Call • ${formatDuration(callDuration)}` : "Online • v2.4"}
                         </span>
                     </div>
                 </div>
 
                 {/* Clear Chat & Mode Toggle */}
-                <div className="flex items-center gap-2 flex-shrink-0">
+                <div className="flex items-center gap-2 md:gap-2 flex-shrink-0">
                     <Button
                         variant="ghost"
                         size="icon"
                         onClick={handleClearChat}
                         title="Clear Chat History"
-                        className="h-8 w-8 sm:h-10 sm:w-10 rounded-full bg-white/5 border border-white/10 text-muted-foreground hover:text-red-400 hover:bg-white/10"
+                        className="h-10 w-10 md:h-10 md:w-10 rounded-full bg-white/5 border border-white/10 text-muted-foreground hover:text-red-400 hover:bg-white/10 active:scale-95 transition-transform"
                     >
-                        <Trash2 size={16} className="sm:size-[18px]" />
+                        <Trash2 size={18} className="md:size-[18px]" />
                     </Button>
 
-                    <div className="flex items-center gap-1 sm:gap-2 bg-white/5 border border-white/10 rounded-full p-1">
+                    <div className="flex items-center gap-1 md:gap-2 bg-white/5 border border-white/10 rounded-full p-1">
                         <button
                             onClick={() => {
                                 setMode("text");
@@ -473,7 +521,7 @@ export function ChatInterface({ sessionId = "1", sessionName = "Alan Turing" }) 
                                 setCallDuration(0);
                             }}
                             className={cn(
-                                "px-2 sm:px-4 py-1 rounded-full text-xs sm:text-sm font-medium transition-all duration-200 whitespace-nowrap",
+                                "px-4 md:px-4 py-1.5 md:py-1 rounded-full text-sm md:text-sm font-medium transition-all duration-200 whitespace-nowrap active:scale-95",
                                 mode === "text"
                                     ? "bg-primary text-white shadow-lg shadow-primary/20"
                                     : "text-muted-foreground hover:text-white"
@@ -484,7 +532,7 @@ export function ChatInterface({ sessionId = "1", sessionName = "Alan Turing" }) 
                         <button
                             onClick={() => setMode("call")}
                             className={cn(
-                                "px-2 sm:px-4 py-1 rounded-full text-xs sm:text-sm font-medium transition-all duration-200 whitespace-nowrap",
+                                "px-4 md:px-4 py-1.5 md:py-1 rounded-full text-sm md:text-sm font-medium transition-all duration-200 whitespace-nowrap active:scale-95",
                                 mode === "call"
                                     ? "bg-primary text-white shadow-lg shadow-primary/20"
                                     : "text-muted-foreground hover:text-white"
@@ -507,15 +555,15 @@ export function ChatInterface({ sessionId = "1", sessionName = "Alan Turing" }) 
                         className="flex-1 flex flex-col min-h-0 overflow-hidden"
                     >
                         {/* Chat Area */}
-                        <ScrollArea className="flex-1 px-3 sm:px-6 py-4 sm:py-6 overflow-y-auto" ref={scrollRef}>
-                            <div className="space-y-4 sm:space-y-6 max-w-2xl sm:max-w-3xl mx-auto pb-4">
+                        <ScrollArea className="flex-1 px-4 md:px-6 py-4 md:py-6 overflow-y-auto" ref={scrollRef}>
+                            <div className="space-y-5 md:space-y-6 max-w-2xl md:max-w-3xl mx-auto pb-4">
                                 {messages.length === 0 && !isLoading && (
-                                    <div className="flex flex-col items-center justify-center py-12 text-center">
-                                        <div className="w-16 h-16 rounded-full bg-primary/20 flex items-center justify-center mb-4">
+                                    <div className="flex flex-col items-center justify-center py-12 px-4 text-center">
+                                        <div className="w-16 h-16 md:w-16 md:h-16 rounded-full bg-primary/20 flex items-center justify-center mb-4">
                                             <CpuIcon size={32} className="text-primary" />
                                         </div>
-                                        <h3 className="text-lg font-medium text-white mb-2">Start a conversation</h3>
-                                        <p className="text-sm text-muted-foreground max-w-xs">
+                                        <h3 className="text-lg md:text-lg font-medium text-white mb-2">Start a conversation</h3>
+                                        <p className="text-sm md:text-sm text-muted-foreground max-w-xs">
                                             Type a message below to begin chatting. Drag & drop images to share them with the persona.
                                         </p>
                                     </div>
@@ -524,19 +572,19 @@ export function ChatInterface({ sessionId = "1", sessionName = "Alan Turing" }) 
                                     <div
                                         key={msg.id}
                                         className={cn(
-                                            "flex gap-2 sm:gap-4 max-w-[90%] sm:max-w-[80%]",
+                                            "flex gap-3 md:gap-4 max-w-[85%] md:max-w-[80%]",
                                             msg.role === "user" ? "ml-auto flex-row-reverse" : ""
                                         )}
                                     >
                                         <div className={cn(
-                                            "w-6 h-6 sm:w-8 sm:h-8 rounded-full flex items-center justify-center shrink-0 border border-white/10 text-xs sm:text-base",
+                                            "w-8 h-8 md:w-8 md:h-8 rounded-full flex items-center justify-center shrink-0 border border-white/10",
                                             msg.role === "assistant" ? "bg-primary/20 text-primary" : "bg-white/10 text-white"
                                         )}>
-                                            {msg.role === "assistant" ? <CpuIcon size={14} /> : <User size={14} />}
+                                            {msg.role === "assistant" ? <CpuIcon size={16} /> : <User size={16} />}
                                         </div>
 
                                         <div className={cn(
-                                            "p-3 sm:p-4 rounded-lg sm:rounded-2xl text-xs sm:text-sm leading-relaxed break-words overflow-hidden",
+                                            "p-4 md:p-4 rounded-2xl md:rounded-2xl text-sm md:text-sm leading-relaxed break-words overflow-hidden",
                                             msg.role === "assistant"
                                                 ? "bg-white/5 border border-white/5 text-gray-200 rounded-tl-none"
                                                 : "bg-primary text-white shadow-lg shadow-primary/20 rounded-tr-none"
@@ -557,7 +605,7 @@ export function ChatInterface({ sessionId = "1", sessionName = "Alan Turing" }) 
 
                                             <span className="whitespace-pre-wrap">{msg.content}</span>
                                             <div className={cn(
-                                                "text-[8px] sm:text-[10px] mt-2 opacity-50",
+                                                "text-[10px] md:text-[10px] mt-2 opacity-50",
                                                 msg.role === "user" ? "text-right" : ""
                                             )}>
                                                 {msg.timestamp}
@@ -566,11 +614,11 @@ export function ChatInterface({ sessionId = "1", sessionName = "Alan Turing" }) 
                                     </div>
                                 ))}
                                 {isLoading && (
-                                    <div className="flex gap-2 sm:gap-4">
-                                        <div className="w-6 h-6 sm:w-8 sm:h-8 rounded-full flex items-center justify-center shrink-0 border border-white/10 bg-primary/20 text-primary">
-                                            <CpuIcon size={14} />
+                                    <div className="flex gap-3 md:gap-4">
+                                        <div className="w-8 h-8 md:w-8 md:h-8 rounded-full flex items-center justify-center shrink-0 border border-white/10 bg-primary/20 text-primary">
+                                            <CpuIcon size={16} />
                                         </div>
-                                        <div className="p-3 sm:p-4 rounded-lg sm:rounded-2xl bg-white/5 border border-white/5 text-gray-200 rounded-tl-none">
+                                        <div className="p-4 md:p-4 rounded-2xl md:rounded-2xl bg-white/5 border border-white/5 text-gray-200 rounded-tl-none">
                                             <div className="flex gap-1">
                                                 <span className="w-2 h-2 bg-primary/50 rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></span>
                                                 <span className="w-2 h-2 bg-primary/50 rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></span>
@@ -583,41 +631,41 @@ export function ChatInterface({ sessionId = "1", sessionName = "Alan Turing" }) 
                         </ScrollArea>
 
                         {/* Input Area */}
-                        <div className="p-3 sm:p-6 pb-6 sm:pb-8">
-                            <div className="max-w-2xl sm:max-w-3xl mx-auto relative group">
-                                <div className="absolute -inset-0.5 bg-gradient-to-r from-primary/20 to-blue-500/20 rounded-lg sm:rounded-2xl blur opacity-20 group-hover:opacity-40 transition duration-500" />
-                                <div className="relative bg-sidebar border border-white/10 rounded-lg sm:rounded-2xl shadow-2xl overflow-hidden">
+                        <div className="p-4 md:p-6 pb-safe">
+                            <div className="max-w-2xl md:max-w-3xl mx-auto relative group">
+                                <div className="absolute -inset-0.5 bg-gradient-to-r from-primary/20 to-blue-500/20 rounded-2xl md:rounded-2xl blur opacity-20 group-hover:opacity-40 transition duration-500" />
+                                <div className="relative bg-sidebar border border-white/10 rounded-2xl md:rounded-2xl shadow-2xl overflow-hidden">
 
                                     {/* Attachment Preview */}
                                     {attachment && (
-                                        <div className="px-4 py-2 bg-white/5 border-b border-white/5 flex items-center justify-between">
+                                        <div className="px-4 py-3 md:py-2 bg-white/5 border-b border-white/5 flex items-center justify-between">
                                             <div className="flex items-center gap-2 overflow-hidden">
                                                 <ImageIcon size={16} className="text-primary shrink-0" />
-                                                <span className="text-xs text-muted-foreground truncate max-w-[200px]">{attachment.name}</span>
+                                                <span className="text-sm md:text-xs text-muted-foreground truncate max-w-[200px]">{attachment.name}</span>
                                             </div>
                                             <Button
                                                 variant="ghost"
                                                 size="icon"
-                                                className="h-6 w-6 text-muted-foreground hover:text-white"
+                                                className="h-8 w-8 md:h-6 md:w-6 text-muted-foreground hover:text-white active:scale-95 transition-transform"
                                                 onClick={() => setAttachment(null)}
                                             >
-                                                <X size={14} />
+                                                <X size={16} className="md:size-[14px]" />
                                             </Button>
                                         </div>
                                     )}
 
-                                    <div className="p-1.5 sm:p-2 flex items-center gap-1 sm:gap-2">
+                                    <div className="p-2 md:p-2 flex items-center gap-2 md:gap-2">
                                         <Button
                                             variant="ghost"
                                             size="icon"
                                             className={cn(
-                                                "h-8 w-8 sm:h-10 sm:w-10 shrink-0 text-xs sm:text-base transition-colors",
+                                                "h-11 w-11 md:h-10 md:w-10 shrink-0 transition-colors active:scale-95",
                                                 attachment ? "text-primary" : "text-muted-foreground hover:text-white"
                                             )}
                                             onClick={handleAttachment}
                                             title="Attach image"
                                         >
-                                            <Paperclip size={16} className="sm:size-[20px]" />
+                                            <Paperclip size={20} className="md:size-[20px]" />
                                         </Button>
 
                                         <Input
@@ -626,7 +674,7 @@ export function ChatInterface({ sessionId = "1", sessionName = "Alan Turing" }) 
                                             onKeyDown={(e) => e.key === "Enter" && handleSend()}
                                             onPaste={handlePaste}
                                             placeholder="Message... (Paste images supported)"
-                                            className="flex-1 bg-transparent border-none focus-visible:ring-0 text-white placeholder:text-muted-foreground/50 h-10 sm:h-12 text-xs sm:text-base"
+                                            className="flex-1 bg-transparent border-none focus-visible:ring-0 text-white placeholder:text-muted-foreground/50 h-11 md:h-12 text-base md:text-base px-1"
                                             disabled={isLoading}
                                         />
 
@@ -634,21 +682,21 @@ export function ChatInterface({ sessionId = "1", sessionName = "Alan Turing" }) 
                                             variant="ghost"
                                             size="icon"
                                             className={cn(
-                                                "h-8 w-8 sm:h-10 sm:w-10 shrink-0 text-xs sm:text-base transition-colors",
+                                                "h-11 w-11 md:h-10 md:w-10 shrink-0 transition-colors active:scale-95",
                                                 isListening ? "text-red-500 animate-pulse" : "text-muted-foreground hover:text-white"
                                             )}
                                             onClick={handleMicClick}
                                         >
-                                            <Mic size={16} className="sm:size-[20px]" />
+                                            <Mic size={20} className="md:size-[20px]" />
                                         </Button>
 
                                         <Button
                                             onClick={handleSend}
                                             size="icon"
-                                            className="bg-primary hover:bg-primary/90 text-white rounded-lg sm:rounded-xl shrink-0 h-8 w-8 sm:h-10 sm:w-10 shadow-[0_0_15px_rgba(124,58,237,0.3)]"
+                                            className="bg-primary hover:bg-primary/90 text-white rounded-xl md:rounded-xl shrink-0 h-11 w-11 md:h-10 md:w-10 shadow-[0_0_15px_rgba(124,58,237,0.3)] active:scale-95 transition-transform"
                                             disabled={isLoading || (!input.trim() && !attachment)}
                                         >
-                                            <Send size={14} className="sm:size-[18px]" />
+                                            <Send size={18} className="md:size-[18px]" />
                                         </Button>
                                     </div>
                                 </div>
@@ -667,7 +715,7 @@ export function ChatInterface({ sessionId = "1", sessionName = "Alan Turing" }) 
                         className="flex-1 flex flex-col items-center justify-center p-4 sm:p-6 relative"
                     >
                         {/* Call Interface */}
-                        <div className="flex flex-col items-center gap-4 sm:gap-8 max-w-sm sm:max-w-md w-full">
+                        <div className="flex flex-col items-center gap-6 md:gap-8 max-w-sm md:max-w-md w-full px-4">
                             {/* Avatar */}
                             <motion.div
                                 initial={{ scale: 0 }}
@@ -675,8 +723,8 @@ export function ChatInterface({ sessionId = "1", sessionName = "Alan Turing" }) 
                                 transition={{ delay: 0.2 }}
                                 className="relative"
                             >
-                                <div className="w-20 h-20 sm:w-32 sm:h-32 rounded-full bg-gradient-to-br from-primary/30 to-primary/10 border-2 border-primary/50 flex items-center justify-center shadow-2xl shadow-primary/20">
-                                    <CpuIcon size={40} className="text-primary sm:size-[64px]" />
+                                <div className="w-32 h-32 md:w-32 md:h-32 rounded-full bg-gradient-to-br from-primary/30 to-primary/10 border-2 border-primary/50 flex items-center justify-center shadow-2xl shadow-primary/20">
+                                    <CpuIcon size={64} className="text-primary" />
                                 </div>
                                 {isCallActive && (
                                     <>
@@ -707,7 +755,7 @@ export function ChatInterface({ sessionId = "1", sessionName = "Alan Turing" }) 
                                             {callStatus === "idle" && formatDuration(callDuration)}
                                         </span>
                                     ) : (
-                                        "Ready for call"
+                                        callReadiness.ready ? "Ready for call" : <span className="text-red-400 font-medium">{callReadiness.reason}</span>
                                     )}
                                 </p>
                                 {aiResponse && isCallActive && (
@@ -722,24 +770,27 @@ export function ChatInterface({ sessionId = "1", sessionName = "Alan Turing" }) 
                                 initial={{ y: 20, opacity: 0 }}
                                 animate={{ y: 0, opacity: 1 }}
                                 transition={{ delay: 0.4 }}
-                                className="flex items-center gap-3 sm:gap-6 mt-4 sm:mt-8"
+                                className="flex items-center gap-6 md:gap-6 mt-6 md:mt-8"
                             >
 
 
                                 <Button
                                     onClick={handleCallToggle}
+                                    disabled={!isCallActive && !callReadiness.ready}
                                     size="lg"
                                     className={cn(
-                                        "h-12 w-12 sm:h-16 sm:w-16 rounded-full font-medium transition-all duration-300 p-0",
+                                        "h-20 w-20 md:h-16 md:w-16 rounded-full font-medium transition-all duration-300 p-0 active:scale-95",
                                         isCallActive
                                             ? "bg-red-500 hover:bg-red-600 shadow-lg shadow-red-500/50 text-white"
-                                            : "bg-green-500 hover:bg-green-600 shadow-lg shadow-green-500/50 text-white"
+                                            : !callReadiness.ready
+                                                ? "bg-white/5 text-muted-foreground border-2 border-white/10 cursor-not-allowed"
+                                                : "bg-green-500 hover:bg-green-600 shadow-lg shadow-green-500/50 text-white"
                                     )}
                                 >
                                     {isCallActive ? (
-                                        <PhoneOff size={22} className="sm:size-[28px]" />
+                                        <PhoneOff size={28} className="md:size-[28px]" />
                                     ) : (
-                                        <Phone size={22} className="sm:size-[28px]" />
+                                        <Phone size={28} className="md:size-[28px]" />
                                     )}
                                 </Button>
                             </motion.div>
@@ -754,7 +805,7 @@ export function ChatInterface({ sessionId = "1", sessionName = "Alan Turing" }) 
                                 {isCallActive ? (
                                     "ENCRYPTED P2P CONNECTION // VOICE SYNTHESIS ACTIVE"
                                 ) : (
-                                    "READY TO CONNECT // PRESS CALL TO BEGIN"
+                                    callReadiness.ready ? "READY TO CONNECT // PRESS CALL TO BEGIN" : "CONNECTION ERROR // CHECK SETTINGS"
                                 )}
                             </motion.div>
                         </div>

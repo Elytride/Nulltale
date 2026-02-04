@@ -138,15 +138,15 @@ export default function Home() {
                     />
                 ) : (
                     /* AlterEcho Home Screen (Empty State) */
-                    <div className="flex-1 flex flex-col items-center justify-center p-8 relative overflow-hidden">
+                    <div className="flex-1 flex flex-col items-center justify-center p-6 md:p-8 relative overflow-hidden">
                         {/* Background Effects */}
                         <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_50%,rgba(120,58,237,0.15),transparent_50%)] pointer-events-none" />
                         <div className="absolute inset-0 bg-[radial-gradient(circle_at_80%_20%,rgba(59,130,246,0.1),transparent_40%)] pointer-events-none" />
 
                         {/* Logo */}
-                        <div className="relative mb-8">
-                            <div className="w-24 h-24 rounded-2xl bg-gradient-to-br from-primary/30 to-blue-500/20 flex items-center justify-center border border-primary/30 shadow-2xl shadow-primary/20">
-                                <Cpu size={48} className="text-primary" />
+                        <div className="relative mb-6 md:mb-8">
+                            <div className="w-20 h-20 md:w-24 md:h-24 rounded-2xl bg-gradient-to-br from-primary/30 to-blue-500/20 flex items-center justify-center border border-primary/30 shadow-2xl shadow-primary/20">
+                                <Cpu size={40} className="md:size-[48px] text-primary" />
                             </div>
                             <div className="absolute -top-1 -right-1 w-4 h-4 bg-green-500 rounded-full border-2 border-background animate-pulse shadow-lg shadow-green-500/50" />
                         </div>

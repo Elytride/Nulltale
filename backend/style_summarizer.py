@@ -6,6 +6,7 @@ plus includes examples from the original style file.
 
 import os
 import re
+import requests
 from pathlib import Path
 from dotenv import load_dotenv
 from google import genai
@@ -167,8 +168,9 @@ def generate_style_summary(style_path, output_path, subject_name, client=None, m
         model_name: Name of the Gemini model to use (defaults to env var or gemini-2.0-flash)
         additional_context: Optional additional context/notes provided by user
     """
+
     if not model_name:
-        model_name = os.getenv("TRAINING_MODEL", "gemini-2.0-flash")
+        model_name = os.getenv("TRAINING_MODEL", "gemini-2.5-flash")
 
     print(f"\n--- Generating Style Summary for {subject_name} ---")
     print(f"  Using model: {model_name}")

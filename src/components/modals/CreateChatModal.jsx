@@ -31,25 +31,29 @@ export function CreateChatModal({ open, onOpenChange, onSessionCreated }) {
         <Dialog open={open} onOpenChange={onOpenChange}>
             <DialogContent className="sm:max-w-[425px] bg-sidebar border-white/10 text-white">
                 <DialogHeader>
-                    <DialogTitle>New Echo</DialogTitle>
-                    <DialogDescription className="text-muted-foreground">
+                    <DialogTitle className="text-xl md:text-2xl">New Echo</DialogTitle>
+                    <DialogDescription className="text-muted-foreground text-sm md:text-base">
                         Give your new personality a name to get started.
                     </DialogDescription>
                 </DialogHeader>
                 <form onSubmit={handleCreate} className="space-y-4 py-4">
                     <div className="space-y-2">
-                        <Label htmlFor="name">Name</Label>
+                        <Label htmlFor="name" className="text-sm md:text-base">Name</Label>
                         <Input
                             id="name"
                             value={name}
                             onChange={(e) => setName(e.target.value)}
                             placeholder="e.g. John Doe"
-                            className="bg-white/5 border-white/10"
+                            className="bg-white/5 border-white/10 h-11 md:h-10 text-base md:text-base"
                             autoFocus
                         />
                     </div>
                     <DialogFooter>
-                        <Button type="submit" disabled={!name.trim() || isCreating}>
+                        <Button 
+                            type="submit" 
+                            disabled={!name.trim() || isCreating}
+                            className="h-11 md:h-10 text-base md:text-base active:scale-95 transition-transform w-full sm:w-auto"
+                        >
                             {isCreating ? "Creating..." : "Create & Manage Files"}
                         </Button>
                     </DialogFooter>

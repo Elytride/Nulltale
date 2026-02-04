@@ -38,12 +38,13 @@ class ContextRetriever:
     Retrieves relevant context chunks based on semantic similarity.
     """
     
-    def __init__(self, embeddings_path, client=None):
+    def __init__(self, embeddings_path=None, embeddings_data=None, client=None):
         """
         Initialize the retriever with pre-computed embeddings.
         
         Args:
-            embeddings_path: Path to the embeddings JSON file
+            embeddings_path: Path to the embeddings JSON file (file mode)
+            embeddings_data: Dict containing embeddings data (inline mode)
             client: Optional genai.Client instance
         """
         if client:
@@ -53,13 +54,20 @@ class ContextRetriever:
             if not api_key:
                 raise ValueError("GEMINI_API_KEY not found")
             self.client = genai.Client(api_key=api_key)
-            
-        with open(embeddings_path, 'r', encoding='utf-8') as f:
-            data = json.load(f)
+        
+        # Support both file path and inline data modes
+        if embeddings_data:
+            data = embeddings_data
+        elif embeddings_path:
+            with open(embeddings_path, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+        else:
+            # Empty data for when no context is available
+            data = {'subject': 'Unknown', 'chunks': []}
         
         self.subject = data.get('subject', 'Unknown')
-        self.chunks = data['chunks']
-        self.embedding_model = data.get('embedding_model', 'text-embedding-004')
+        self.chunks = data.get('chunks', [])
+        self.embedding_model = data.get('embedding_model', 'gemini-embedding-001')
         
         # Pre-compute numpy arrays for faster retrieval
         self.embeddings = []
