@@ -155,7 +155,7 @@ def truncate_section(section_content, percentage):
     return '\n'.join(lines[-keep_count:])
 
 
-def generate_style_summary(style_path, output_path, subject_name, client=None, model_name="gemini-2.0-flash", additional_context=None):
+def generate_style_summary(style_path, output_path, subject_name, client=None, model_name=None, additional_context=None):
     """
     Generate a comprehensive style summary using Gemini.
     
@@ -164,9 +164,12 @@ def generate_style_summary(style_path, output_path, subject_name, client=None, m
         output_path: Path to write the output summary
         subject_name: Name of the subject whose style is being analyzed
         client: Optional genai.Client instance
-        model_name: Name of the Gemini model to use
+        model_name: Name of the Gemini model to use (defaults to env var or gemini-2.0-flash)
         additional_context: Optional additional context/notes provided by user
     """
+    if not model_name:
+        model_name = os.getenv("TRAINING_MODEL", "gemini-2.0-flash")
+
     print(f"\n--- Generating Style Summary for {subject_name} ---")
     print(f"  Using model: {model_name}")
     

@@ -17,7 +17,7 @@ load_dotenv(ROOT_DIR / ".env")
 # Configure Gemini - Removed Global Config
 
 
-def generate_embeddings(chunks_path, output_path, batch_size=100, client=None, model_name="text-embedding-004"):
+def generate_embeddings(chunks_path, output_path, batch_size=100, client=None, model_name=None):
     """
     Generate embeddings for all context chunks.
     
@@ -28,6 +28,9 @@ def generate_embeddings(chunks_path, output_path, batch_size=100, client=None, m
         client: Optional genai.Client instance
         model_name: Name of the embedding model to use
     """
+    if not model_name:
+        model_name = os.getenv("EMBEDDING_MODEL", "text-embedding-004")
+
     print(f"\n--- Generating Embeddings ---")
     print(f"  Using model: {model_name}")
     

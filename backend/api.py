@@ -90,10 +90,10 @@ def load_settings():
             pass
     # Defaults
     return {
-        "chatbot_model": "gemini-2.0-flash",
-        "training_model": "gemini-2.0-flash",
-        "embedding_model": "text-embedding-004",
-        "image_model": "gemini-2.0-flash" # Default image model
+        "chatbot_model": "gemini-flash-latest",
+        "training_model": "gemini-3-flash-preview",
+        "embedding_model": "gemini-embedding-001",
+        "image_model": "gemini-2.5-flash-image" # Default image model
     }
 
 def save_settings(new_settings):
@@ -846,7 +846,7 @@ def send_message():
         return jsonify({
             "user_message": user_msg_obj,
             "ai_message": {
-               "id": uuid.uuid4().hex[:8], "role": "assistant", "content": "I'm not ready yet.", "timestamp": ""
+               "id": uuid.uuid4().hex[:8], "role": "assistant", "content": "Please initialise persona in 'manage files'", "timestamp": ""
             }
         })
 
